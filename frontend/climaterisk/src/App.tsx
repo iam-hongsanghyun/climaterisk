@@ -1,0 +1,140 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ensureSession, getLibraries, saveModel } from "./lib/api";
+import { useResults } from "./lib/useResults";
+import type { Libraries, Portfolio } from "./types";
+import { ActivityBar, type ViewId } from "./layout/ActivityBar";
+import { MapView } from "./views/MapView";
+import { ScenariosView } from "./views/ScenariosView";
+import { ResultsView } from "./views/ResultsView";
+import { AdaptationView } from "./views/AdaptationView";
+import { VulnerabilityView } from "./views/VulnerabilityView";
+import { DataView } from "./views/DataView";
+import { MethodView } from "./views/MethodView";
+
+export function App() {
+  const [model, setModel] = useState<Portfolio | null>(null);
+  const [libraries, setLibraries] = useState<Libraries | null>(null);
+  const [view, setView] = useState<ViewId>("map");
+  const [sync, setSync] = useState<"idle" | "saving" | "error">("idle");
+  const initialLoad = useRef(true);
+  const saveTimer = useRef<number | undefined>(undefined);
+
+  // Bootstrap: load libraries + the session model, dropping any unsupported perils
+  // that a previous session may have persisted (e.g. river_flood before Phase 2+).
+  useEffect(() => {
+    (async () => {
+      const [libs, portfolio] = await Promise.all([getLibraries(), ensureSession()]);
+      const supported = new Set(
+        libs.perils.perils.filter((p) => p.supported_mvp).map((p) => p.id),
+      );
+      const kept = portfolio.run_config.perils.filter((p) => supported.has(p));
+      const perils = kept.length > 0 ? kept : ["tropical_cyclone"];
+      const changed = perils.length !== portfolio.run_config.perils.length;
+      const model = changed
+        ? { ...portfolio, run_config: { ...portfolio.run_config, perils } }
+        : portfolio;
+      setLibraries(libs);
+      setModel(model);
+      if (changed) saveModel(model).catch(() => {});
+    })().catch((e) => {
+      console.error("bootstrap failed", e);
+    });
+  }, []);
+
+  // Debounced autosave on any model change (skip the initial load).
+  useEffect(() => {
+    if (!model) return;
+    if (initialLoad.current) {
+      initialLoad.current = false;
+      return;
+    }
+    window.clearTimeout(saveTimer.current);
+    setSync("saving");
+    saveTimer.current = window.setTimeout(() => {
+      saveModel(model)
+        .then(() => setSync("idle"))
+        .catch(() => setSync("error"));
+    }, 600);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [model]);
+
+  const patchModel = useCallback((patch: Partial<Portfolio>) => {
+    setModel((m) => (m ? { ...m, ...patch } : m));
+  }, []);
+
+  // Run state + polling live here so results survive tab switches.
+  const results = useResults(model?.id ?? "");
+
+  if (!model || !libraries) {
+    return <div className="empty">Loading climaterisk…</div>;
+  }
+
+  return (
+    <div className="app">
+      <ActivityBar view={view} onChange={setView} />
+      <div className="workspace">
+        <div className="topbar">
+          <input
+            className="title"
+            value={model.name}
+            onChange={(e) => patchModel({ name: e.target.value })}
+            spellCheck={false}
+          />
+          <span className="meta">
+            {model.assets.length} asset{model.assets.length === 1 ? "" : "s"} · {model.depth_level}
+          </span>
+          <span className={`sync ${sync === "saving" ? "saving" : ""}`}>
+            {sync === "saving" ? "saving…" : sync === "error" ? "save failed" : "saved"}
+          </span>
+        </div>
+        <div className="content">
+          {view === "map" && (
+            <MapView
+              model={model}
+              libraries={libraries}
+              patchModel={patchModel}
+              litpopRun={results.litpopRun}
+              litpopBusy={results.litpopBusy}
+              litpopErr={results.litpopErr}
+              onRunLitpop={results.runLitpop}
+            />
+          )}
+          {view === "scenarios" && (
+            <ScenariosView model={model} libraries={libraries} patchModel={patchModel} />
+          )}
+          {view === "vulnerability" && (
+            <VulnerabilityView model={model} libraries={libraries} patchModel={patchModel} />
+          )}
+          {view === "results" && (
+            <ResultsView
+              model={model}
+              run={results.physRun}
+              transition={results.transition}
+              busy={results.physBusy}
+              error={results.physErr}
+              onRun={results.runPhysical}
+              uncRun={results.uncRun}
+              uncBusy={results.uncBusy}
+              uncErr={results.uncErr}
+              onRunUncertainty={results.runUncertainty}
+              cbRunId={results.cbRun?.id}
+            />
+          )}
+          {view === "adaptation" && (
+            <AdaptationView
+              model={model}
+              measures={results.cbMeasures}
+              setMeasures={results.setCbMeasures}
+              run={results.cbRun}
+              busy={results.cbBusy}
+              error={results.cbErr}
+              onRun={results.runCostBenefit}
+            />
+          )}
+          {view === "data" && <DataView model={model} libraries={libraries} />}
+          {view === "method" && <MethodView libraries={libraries} />}
+        </div>
+      </div>
+    </div>
+  );
+}

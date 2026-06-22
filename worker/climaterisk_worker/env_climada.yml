@@ -1,0 +1,26 @@
+# Conda environment for the CLIMADA worker — created as a PROJECT-LOCAL prefix env
+# (never a global/named env), so CLIMADA lives inside this repo and travels with it.
+#
+# CLIMADA's geospatial stack (GDAL/PROJ/rasterio/geopandas) cannot be installed
+# with pip alone — use conda-forge. Build the env into ./.climada-env:
+#
+#   conda env create -f worker/climaterisk_worker/env_climada.yml --prefix ./.climada-env
+#   ./.climada-env/bin/python -c "import climada; print('ok')"
+#
+# The backend resolves the worker interpreter from CLIMATERISK_WORKER_ENV_DIR
+# (default .climada-env) — see src/climaterisk/config.py. No `conda activate` needed.
+#
+# climada (conda-forge) pulls in the full geospatial dependency set and covers the
+# Phase-2 first peril (tropical cyclone — core CLIMADA, Data API future sets, Emanuel
+# impact function). climada_petals (river flood, wildfire, drought, …) is added later
+# via pip once the core env is proven:  pip install "climada_petals>=6.1"
+#
+# NB: intentionally no top-level `name:` — this env is always built with --prefix.
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - climada>=6.1
+  # To run the engine regression test (tests/test_physical_regression.py) in this env.
+  - pytest>=8.0

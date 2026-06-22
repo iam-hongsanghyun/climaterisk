@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "description": "Physical climate hazards. `engine_hazard_type` is the CLIMADA hazard tag; `future_source` notes how forward-looking hazard is obtained. Unsupported perils carry a `reason` explaining the data gap and the real path to add them.",
+    "provenance": "Hazard availability verified against the live CLIMADA Data API catalogue (tropical_cyclone, river_flood, wildfire, storm_europe). See docs/METHODOLOGY.md."
+  },
+  "perils": [
+    {"id": "tropical_cyclone", "label": "Tropical cyclone", "engine_hazard_type": "TC", "future_source": "Data API future sets (rcp26/45/60/85 × ref_year 2040/2060/2080) + present 'None'", "supported_mvp": true},
+    {"id": "river_flood", "label": "River flood", "engine_hazard_type": "RF", "future_source": "Data API river-flood depth (rcp26/60/85 × year_range; ISIMIP-derived) + historical baseline", "supported_mvp": true},
+    {"id": "wildfire", "label": "Wildfire", "engine_hazard_type": "WFseason", "future_source": "Data API wildfire brightness-temperature (historical 2001–2020 only — no future set published)", "supported_mvp": true, "historical_only": true},
+    {"id": "european_windstorm", "label": "European windstorm", "engine_hazard_type": "WS", "future_source": "Data API storm_europe CMIP6 winter-windstorm (SSP126/245/370/585) + present 'None'", "supported_mvp": true, "coverage": "Europe only"},
+    {"id": "earthquake", "label": "Earthquake (geophysical)", "engine_hazard_type": "EQ", "future_source": "Data API earthquake observed catalogue (MMI); geophysical — no climate scenario", "supported_mvp": true, "historical_only": true},
+    {"id": "coastal_flood", "label": "Coastal flood / sea-level rise", "engine_hazard_type": "CF", "future_source": "n/a", "supported_mvp": false, "reason": "No global future coastal-flood set in the CLIMADA Data API. Real path: WRI Aqueduct coastal layers or climada_petals tc_surge_bathtub (TC surge + DEM)."},
+    {"id": "heatwave", "label": "Heatwave", "engine_hazard_type": "HW", "future_source": "n/a", "supported_mvp": false, "reason": "Heat is modelled as labour-productivity / mortality impact, not direct asset damage; no CLIMADA asset-damage hazard set. Real path: OS-Climate physrisk chronic-heat indicators."},
+    {"id": "drought", "label": "Drought", "engine_hazard_type": "DR", "future_source": "n/a", "supported_mvp": false, "reason": "Available only as agricultural yield loss (Data API relative_cropyield, historical+rcp60), not general asset damage. Real path: a crop-yield impact model for agriculture assets."},
+    {"id": "hail", "label": "Hail", "engine_hazard_type": "HL", "future_source": "n/a", "supported_mvp": false, "reason": "Data API hail is Europe-only (radar MESHS/POH, REF/PGW scenarios) with finicky dataset selection. Real path: wire the radar_variable/data_source/scenario selection + a MESHS damage curve."}
+  ]
+}

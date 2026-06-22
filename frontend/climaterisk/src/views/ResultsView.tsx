@@ -1,0 +1,222 @@
+import type { PhysicalRunOutput, PhysicalRunResult, Portfolio, Run, TransitionResult } from "../types";
+import { money } from "../lib/format";
+import { ResultsMap } from "../components/ResultsMap";
+import { FreqCurveChart } from "../components/FreqCurveChart";
+import { TransitionChart } from "../components/TransitionChart";
+import { MethodNote } from "../components/MethodNote";
+import { Aggregation } from "../components/Aggregation";
+import { UncertaintyPanel } from "../components/UncertaintyPanel";
+
+function Kpi({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="kpi">
+      <div className="kpi-value">{value}</div>
+      <div className="kpi-label">{label}</div>
+    </div>
+  );
+}
+
+function PhysicalResult({ result, currency }: { result: PhysicalRunResult; currency: string }) {
+  const title = result.peril.replace(/_/g, " ");
+  if (result.status !== "ok") {
+    return (
+      <div className="card">
+        <div className="section-title">{title}</div>
+        <p className="hint">
+          <span className="pill">{result.status}</span> {result.detail}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div className="section-title">Physical · {title}</div>
+        <span className="pill">horizon {result.target_year}</span>
+      </div>
+      <div className="kpi-grid">
+        <Kpi label="Avg annual impact" value={`${money(result.aai_agg, currency)}/yr`} />
+        <Kpi label="Total exposed value" value={money(result.total_value, currency)} />
+        <Kpi
+          label="AAI / value"
+          value={`${((result.aai_agg / Math.max(result.total_value, 1)) * 100).toFixed(2)}%`}
+        />
+      </div>
+      {result.delta_pct != null && result.present_aai_agg != null && (
+        <p className="hint" style={{ marginTop: 10 }}>
+          Climate change to {result.target_year}:{" "}
+          <strong style={{ color: result.delta_pct >= 0 ? "var(--danger)" : "var(--accent)" }}>
+            {result.delta_pct >= 0 ? "+" : ""}
+            {result.delta_pct.toFixed(1)}%
+          </strong>{" "}
+          vs present-day baseline (AAI {money(result.present_aai_agg, currency)}/yr → {money(result.aai_agg, currency)}/yr).
+        </p>
+      )}
+      <div style={{ marginTop: 14 }}>
+        <ResultsMap impacts={result.per_asset} currency={currency} />
+      </div>
+      {result.freq_curve && (
+        <div style={{ marginTop: 14 }}>
+          <div className="section-title" style={{ marginBottom: 6 }}>
+            Return-period losses
+          </div>
+          <FreqCurveChart curve={result.freq_curve} currency={currency} />
+        </div>
+      )}
+      <MethodNote>
+        <strong>Probability × impact.</strong> <em>Avg Annual Impact = Σ events (frequency × damage)</em>,
+        computed by CLIMADA over a probabilistic hazard event set × a per-asset vulnerability curve ×
+        your asset value. The return-period curve is the loss exceeded once per N years; the delta
+        compares the future horizon to a present-day baseline hazard set.
+        <br />
+        <strong>Data:</strong>{" "}
+        {result.peril === "tropical_cyclone" ? (
+          <>
+            hazard — CLIMADA Data API tropical-cyclone sets (synthetic tracks perturbed from IBTrACS;
+            future = RCP × reference year {result.target_year}); vulnerability — Emanuel (2011)
+            wind-damage function with a per-class <code>v_half</code>.
+          </>
+        ) : (
+          <>
+            hazard — CLIMADA Data API river-flood depth sets (ISIMIP-derived; future = RCP ×
+            year-range to {result.target_year}); vulnerability — per-class depth-damage curve
+            (Huizinga-style).
+          </>
+        )}{" "}
+        exposure — your inputs. ({result.detail}.)
+      </MethodNote>
+    </div>
+  );
+}
+
+function TransitionCard({ t, currency }: { t: TransitionResult; currency: string }) {
+  if (t.years.length === 0) {
+    return (
+      <div className="card">
+        <div className="section-title">Transition risk</div>
+        <p className="hint">{t.detail}</p>
+      </div>
+    );
+  }
+  const lastIdx = t.years.length - 1;
+  const proxied = t.per_asset.filter((a) => a.emissions_source === "sector_proxy").length;
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div className="section-title">Transition · {t.scenario.replace(/_/g, " ")}</div>
+        <span className="pill">NGFS · {t.base_year}–{t.years[lastIdx]}</span>
+      </div>
+      <div className="kpi-grid">
+        <Kpi label={`Carbon cost ${t.years[lastIdx]}`} value={`${money(t.total_cost_by_year[lastIdx], currency)}/yr`} />
+        <Kpi label="Carbon-cost NPV" value={money(t.total_npv, currency)} />
+        <Kpi label={`Carbon cost ${t.base_year}`} value={`${money(t.total_cost_by_year[0], currency)}/yr`} />
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div className="section-title" style={{ marginBottom: 6 }}>
+          Annual carbon cost by year
+        </div>
+        <TransitionChart years={t.years} values={t.total_cost_by_year} currency={currency} />
+      </div>
+      <MethodNote>
+        <strong>Policy cost passthrough.</strong> <em>cost(t) = emissions × carbon&nbsp;price(scenario, t)</em>,
+        summed across assets; NPV discounts future costs at {(t.discount_rate * 100).toFixed(1)}%.
+        {proxied > 0 && ` ${proxied} asset(s) used a sector-intensity emissions proxy (no reported Scope-1).`}
+        <br />
+        <strong>Data:</strong> carbon price — real NGFS Phase 5 (REMIND-MAgPIE, US$2010/t) via pyam;
+        emissions — reported Scope-1 where given, else a sector-intensity heuristic (see Method).
+      </MethodNote>
+    </div>
+  );
+}
+
+export function ResultsView({
+  model,
+  run,
+  transition,
+  busy,
+  error,
+  onRun,
+  uncRun,
+  uncBusy,
+  uncErr,
+  onRunUncertainty,
+  cbRunId,
+}: {
+  model: Portfolio;
+  run: Run | null;
+  transition: TransitionResult | null;
+  busy: boolean;
+  error: string | null;
+  onRun: () => void;
+  uncRun: Run | null;
+  uncBusy: boolean;
+  uncErr: string | null;
+  onRunUncertainty: () => void;
+  cbRunId?: string;
+}) {
+  const currency = model.assets[0]?.currency ?? "USD";
+  const running = run?.status === "queued" || run?.status === "running";
+  const start = onRun;
+
+  const reportParams = new URLSearchParams();
+  if (run?.id) reportParams.set("run_id", run.id);
+  if (cbRunId) reportParams.set("cb_run_id", cbRunId);
+  if (uncRun?.id) reportParams.set("unc_run_id", uncRun.id);
+  const reportHref = `/api/session/${model.id}/report?${reportParams.toString()}`;
+
+  return (
+    <div className="panelview">
+      <h2>Results</h2>
+      <div className="card">
+        <p className="hint">
+          <strong>{model.assets.length}</strong> facility(ies) · climate{" "}
+          <span className="pill">{model.scenario.climate}</span> · transition{" "}
+          <span className="pill">{model.scenario.transition.replace(/_/g, " ")}</span> · perils{" "}
+          {model.run_config.perils.map((p) => (
+            <span key={p} className="pill">
+              {p.replace(/_/g, " ")}
+            </span>
+          ))}
+        </p>
+        <button className="btn" onClick={start} disabled={busy || running || model.assets.length === 0}>
+          {running ? "Running CLIMADA…" : busy ? "Submitting…" : "Run analysis"}
+        </button>
+        <a
+          className="btn secondary"
+          href={reportHref}
+          style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
+        >
+          Download report
+        </a>
+        {running && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            ⏳ Physical run: {run?.status}. The first run downloads hazard data and can take a minute.
+          </p>
+        )}
+        {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
+      </div>
+
+      {run?.status === "error" && (
+        <div className="card">
+          <div className="section-title">Physical run failed</div>
+          <pre style={{ whiteSpace: "pre-wrap", color: "var(--danger)", fontSize: 12 }}>{run.detail}</pre>
+        </div>
+      )}
+
+      {run?.status === "done" &&
+        (run.output as PhysicalRunOutput | null)?.results?.map((r) => (
+          <PhysicalResult key={r.peril} result={r} currency={currency} />
+        ))}
+
+      {transition && <TransitionCard t={transition} currency={currency} />}
+
+      {(run?.status === "done" || transition) && model.assets.length > 0 && (
+        <Aggregation model={model} run={run} transition={transition} currency={currency} />
+      )}
+
+      {model.assets.length > 0 && (
+        <UncertaintyPanel run={uncRun} busy={uncBusy} error={uncErr} onRun={onRunUncertainty} />
+      )}
+    </div>
+  );
+}

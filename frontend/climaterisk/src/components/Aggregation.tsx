@@ -1,0 +1,120 @@
+import type { PhysicalRunOutput, Portfolio, Run, TransitionResult } from "../types";
+import { money } from "../lib/format";
+
+interface Row {
+  key: string;
+  value: number;
+  phys: number;
+  trans: number;
+  count: number;
+}
+
+function GroupTable({
+  title,
+  rows,
+  currency,
+}: {
+  title: string;
+  rows: Row[];
+  currency: string;
+}) {
+  const maxPhys = Math.max(1, ...rows.map((r) => r.phys));
+  const maxTrans = Math.max(1, ...rows.map((r) => r.trans));
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="section-title" style={{ marginBottom: 6 }}>
+        {title}
+      </div>
+      <table className="agg-table">
+        <thead>
+          <tr>
+            <th>{title.includes("country") ? "Country" : "Sector"}</th>
+            <th>#</th>
+            <th>Exposed value</th>
+            <th>Physical AAI/yr</th>
+            <th>Transition NPV</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td>{r.key.replace(/_/g, " ")}</td>
+              <td>{r.count}</td>
+              <td>{money(r.value, currency)}</td>
+              <td>
+                <div className="bar-cell">
+                  <span className="bar" style={{ width: `${(r.phys / maxPhys) * 100}%`, background: "var(--accent-2)" }} />
+                  <span className="bar-label">{money(r.phys, currency)}</span>
+                </div>
+              </td>
+              <td>
+                <div className="bar-cell">
+                  <span className="bar" style={{ width: `${(r.trans / maxTrans) * 100}%`, background: "#e0a32e" }} />
+                  <span className="bar-label">{money(r.trans, currency)}</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function Aggregation({
+  model,
+  run,
+  transition,
+  currency,
+}: {
+  model: Portfolio;
+  run: Run | null;
+  transition: TransitionResult | null;
+  currency: string;
+}) {
+  const meta = new Map(model.assets.map((a) => [a.id, { sector: a.sector, value: a.value }]));
+  const country = new Map<string, string>();
+  const phys = new Map<string, number>();
+  const physOutput = run?.output as PhysicalRunOutput | null;
+  if (physOutput?.results) {
+    for (const r of physOutput.results) {
+      if (r.status !== "ok") continue;
+      for (const a of r.per_asset) {
+        phys.set(a.id, (phys.get(a.id) ?? 0) + a.eai);
+        if (a.country) country.set(a.id, a.country);
+      }
+    }
+  }
+  const trans = new Map<string, number>();
+  if (transition) for (const a of transition.per_asset) trans.set(a.id, a.npv);
+
+  const groupBy = (keyFn: (id: string) => string): Row[] => {
+    const m = new Map<string, Row>();
+    for (const a of model.assets) {
+      const key = keyFn(a.id) || "—";
+      const row = m.get(key) ?? { key, value: 0, phys: 0, trans: 0, count: 0 };
+      row.value += meta.get(a.id)?.value ?? 0;
+      row.phys += phys.get(a.id) ?? 0;
+      row.trans += trans.get(a.id) ?? 0;
+      row.count += 1;
+      m.set(key, row);
+    }
+    return [...m.values()].sort((x, y) => y.phys + y.trans - (x.phys + x.trans));
+  };
+
+  const bySector = groupBy((id) => meta.get(id)?.sector ?? "—");
+  const byCountry = groupBy((id) => country.get(id) ?? "—");
+  const hasCountry = byCountry.some((r) => r.key !== "—");
+
+  return (
+    <div className="card">
+      <div className="section-title">Portfolio aggregation</div>
+      <p className="hint">
+        Physical AAI summed across perils and transition NPV, grouped by sector
+        {hasCountry ? " and country (national view)" : ""}.
+      </p>
+      <GroupTable title="By sector" rows={bySector} currency={currency} />
+      {hasCountry && <GroupTable title="By country" rows={byCountry} currency={currency} />}
+    </div>
+  );
+}

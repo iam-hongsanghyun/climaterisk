@@ -1,0 +1,341 @@
+"""Canonical request/result contract for the physical-risk engine.
+
+These pydantic models define the JSON the orchestration backend writes for a run
+(``request.json``) and reads back (``result.json``). The CLIMADA worker — which
+lives in a separate conda env and cannot import this package — implements the
+same shapes. Keep the two in sync (the worker mirrors this module).
+
+One run covers the portfolio under one climate scenario, producing one
+:class:`PhysicalRunResult` per requested peril.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+from pydantic import BaseModel, Field
+
+from climaterisk.core.entities import Portfolio
+from climaterisk.data.libraries import load_libraries
+
+
+class AssetSpec(BaseModel):
+    """A single exposure point handed to the engine, with resolved vulnerability params.
+
+    The backend resolves each asset's vulnerability class into concrete per-peril
+    curve parameters here, so the CLIMADA worker needs no access to the library.
+    """
+
+    id: str
+    name: str
+    lat: float
+    lon: float
+    sector: str
+    value: float
+    currency: str
+    vulnerability_class: str
+    tc_v_half: float  # Emanuel TC: wind speed (m/s) at 50% mean damage
+    wf_max_mdd: float  # wildfire: max mean damage ratio above the fire-intensity threshold
+    flood_depth_m: list[float]  # river-flood depth-damage: depths (m)
+    flood_mdr: list[float]  # river-flood depth-damage: mean damage ratio at each depth
+
+
+def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
+    """Resolve each asset's vulnerability class into concrete per-peril curve params."""
+    libs = load_libraries()
+    classes = {c["id"]: c for c in libs["impact_functions"]["classes"]}
+    flood_depth_m = list(libs["impact_functions"]["flood_depth_m"])
+    sector_default = {s["id"]: s["default_vulnerability_class"] for s in libs["sectors"]["sectors"]}
+    fallback = libs["impact_functions"]["classes"][0]
+
+    overrides = portfolio.vulnerability_overrides
+    specs: list[AssetSpec] = []
+    for a in portfolio.assets:
+        vc_id = a.vulnerability_class or sector_default.get(str(a.sector), fallback["id"])
+        vc = classes.get(vc_id, fallback)
+        ov = overrides.get(vc["id"])
+        tc_v_half = (
+            float(ov.tc_v_half) if ov and ov.tc_v_half is not None else float(vc["tc_v_half"])
+        )
+        wf = float(ov.wf_max_mdd) if ov and ov.wf_max_mdd is not None else float(vc["wf_max_mdd"])
+        fmdr = [float(x) for x in (ov.flood_mdr if ov and ov.flood_mdr else vc["flood_mdr"])]
+        specs.append(
+            AssetSpec(
+                id=a.id,
+                name=a.name,
+                lat=a.lat,
+                lon=a.lon,
+                sector=a.sector,
+                value=a.value,
+                currency=a.currency,
+                vulnerability_class=vc["id"],
+                tc_v_half=tc_v_half,
+                wf_max_mdd=wf,
+                flood_depth_m=flood_depth_m,
+                flood_mdr=fmdr,
+            )
+        )
+    return specs
+
+
+class PhysicalRunRequest(BaseModel):
+    """Everything the physical engine needs for one run."""
+
+    session_id: str
+    perils: list[str]
+    climate_scenario: str
+    anchor_years: list[int]
+    assets: list[AssetSpec]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio) -> PhysicalRunRequest:
+        """Project the session model onto an engine request, resolving vulnerability params."""
+        return cls(
+            session_id=portfolio.id,
+            perils=[p.value for p in portfolio.run_config.perils],
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+            assets=resolve_asset_specs(portfolio),
+        )
+
+
+class AssetImpact(BaseModel):
+    """Per-asset expected annual impact (the ``eai_exp`` map layer)."""
+
+    id: str
+    lat: float
+    lon: float
+    eai: float = Field(description="Expected annual impact, in the asset's currency.")
+    country: str | None = None  # ISO3, for national aggregation
+
+
+class FreqCurve(BaseModel):
+    """Exceedance / return-period curve (CLIMADA ``calc_freq_curve``)."""
+
+    return_periods: list[float]
+    impact: list[float]
+
+
+class PhysicalRunResult(BaseModel):
+    """Engine output for one peril within a run (future horizon, plus present-day delta)."""
+
+    peril: str
+    status: str  # "ok" | "engine_not_ready" | "error"
+    target_year: int | None = None
+    aai_agg: float = 0.0  # future-horizon average annual impact
+    present_aai_agg: float | None = None  # present-day baseline AAI
+    delta_pct: float | None = None  # (future - present) / present, in %
+    total_value: float = 0.0
+    per_asset: list[AssetImpact] = Field(default_factory=list)
+    freq_curve: FreqCurve | None = None
+    detail: str | None = None
+
+
+class PhysicalRunOutput(BaseModel):
+    """The full engine output for one run (one result per requested peril)."""
+
+    status: str  # "ok" | "partial" | "engine_not_ready" | "error"
+    climate_scenario: str
+    results: list[PhysicalRunResult] = Field(default_factory=list)
+    detail: str | None = None
+
+
+class PhysicalEngine(Protocol):
+    """Interface every physical-risk backend (CLIMADA, physrisk, …) implements."""
+
+    name: str
+
+    def run(self, request: PhysicalRunRequest) -> PhysicalRunOutput: ...
+
+
+# --- Adaptation cost-benefit (CLIMADA CostBenefit / MeasureSet) ---
+
+
+class MeasureSpec(BaseModel):
+    """A user-defined adaptation measure."""
+
+    name: str
+    cost: float = Field(default=0.0, ge=0.0)
+    damage_reduction: float = Field(default=0.0, ge=0.0, le=1.0, description="Fractional MDD cut.")
+    hazard_freq_cutoff: float = Field(default=0.0, ge=0.0)
+    risk_transf_attach: float = Field(default=0.0, ge=0.0, description="Insurance deductible.")
+    risk_transf_cover: float = Field(default=0.0, ge=0.0, description="Insurance cover/limit.")
+
+
+class CostBenefitRequest(BaseModel):
+    """Inputs for an adaptation cost-benefit run."""
+
+    mode: str = "cost_benefit"
+    session_id: str
+    peril: str = "tropical_cyclone"
+    climate_scenario: str
+    anchor_years: list[int]
+    discount_rate: float = 0.05
+    assets: list[AssetSpec]
+    measures: list[MeasureSpec]
+
+    @classmethod
+    def from_portfolio(
+        cls, portfolio: Portfolio, measures: list[MeasureSpec]
+    ) -> CostBenefitRequest:
+        """Build a cost-benefit request from the session model + adaptation measures."""
+        return cls(
+            session_id=portfolio.id,
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+            discount_rate=portfolio.run_config.discount_rate,
+            assets=resolve_asset_specs(portfolio),
+            measures=measures,
+        )
+
+
+class MeasureResult(BaseModel):
+    """Per-measure cost-benefit outcome."""
+
+    name: str
+    cost: float
+    benefit: float  # NPV of averted damage
+    benefit_cost_ratio: float | None = None
+
+
+class CostBenefitResult(BaseModel):
+    """Engine output for an adaptation cost-benefit run."""
+
+    status: str
+    peril: str = "tropical_cyclone"
+    future_year: int | None = None
+    discount_rate: float = 0.05
+    currency: str = "USD"
+    tot_climate_risk: float = 0.0  # NPV of unaverted risk
+    measures: list[MeasureResult] = Field(default_factory=list)
+    detail: str | None = None
+
+
+# --- Uncertainty & sensitivity (Monte-Carlo over ImpactCalc) ---
+
+
+class UncertaintyRequest(BaseModel):
+    """Inputs for a Monte-Carlo uncertainty run."""
+
+    mode: str = "uncertainty"
+    session_id: str
+    climate_scenario: str
+    anchor_years: list[int]
+    n_samples: int = 50
+    assets: list[AssetSpec]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio, n_samples: int = 50) -> UncertaintyRequest:
+        """Build an uncertainty request from the session model."""
+        return cls(
+            session_id=portfolio.id,
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+            n_samples=n_samples,
+            assets=resolve_asset_specs(portfolio),
+        )
+
+
+class UncertaintyResult(BaseModel):
+    """Engine output for a Monte-Carlo uncertainty run."""
+
+    status: str
+    peril: str = "tropical_cyclone"
+    future_year: int | None = None
+    n_samples: int = 0
+    currency: str = "USD"
+    aai_mean: float = 0.0
+    aai_std: float = 0.0
+    aai_p5: float = 0.0
+    aai_p50: float = 0.0
+    aai_p95: float = 0.0
+    distribution: list[float] = Field(default_factory=list)
+    sensitivity: dict[str, float] = Field(default_factory=dict)
+    detail: str | None = None
+
+
+# --- LitPop modeled exposure ---
+
+
+class LitPopRequest(BaseModel):
+    """Inputs for a LitPop modeled-exposure run."""
+
+    mode: str = "litpop"
+    session_id: str
+    country: str
+    climate_scenario: str
+    anchor_years: list[int]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio, country: str) -> LitPopRequest:
+        return cls(
+            session_id=portfolio.id,
+            country=country,
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+        )
+
+
+# --- Data ingestion (download & refine real sources into the local catalog) ---
+
+
+class IngestRequest(BaseModel):
+    """Inputs for a data-ingest run (download + refine a source into the catalog).
+
+    ``points`` are the portfolio's asset coordinates; the worker uses them to bound
+    the download (Aqueduct ``/vsicurl`` window) and to compute the catalog region
+    key the SAME way the runners do, so the ingested hazard is found automatically.
+    """
+
+    mode: str = "ingest"
+    session_id: str
+    source: str  # "dataapi" | "aqueduct"
+    peril: str = "river_flood"  # "tropical_cyclone" | "river_flood"
+    scenario: str
+    year: int
+    points: list[list[float]]  # [[lat, lon], ...]
+
+    @classmethod
+    def from_portfolio(
+        cls, portfolio: Portfolio, source: str, peril: str, scenario: str, year: int
+    ) -> IngestRequest:
+        """Build an ingest request scoped to the session's assets."""
+        return cls(
+            session_id=portfolio.id,
+            source=source,
+            peril=peril,
+            scenario=scenario,
+            year=year,
+            points=[[a.lat, a.lon] for a in portfolio.assets],
+        )
+
+
+class IngestResult(BaseModel):
+    """Engine output for a data-ingest run."""
+
+    status: str
+    source: str = ""
+    peril: str = ""
+    entry: dict[str, Any] | None = None  # the catalog entry written
+    detail: str | None = None
+
+
+class LitPopPoint(BaseModel):
+    lat: float
+    lon: float
+    eai: float
+
+
+class LitPopResult(BaseModel):
+    """Engine output for a LitPop modeled-exposure run."""
+
+    status: str
+    country: str = ""
+    peril: str = "tropical_cyclone"
+    future_year: int | None = None
+    total_value: float = 0.0
+    aai_agg: float = 0.0
+    n_points: int = 0
+    currency: str = "USD"
+    per_point: list[LitPopPoint] = Field(default_factory=list)
+    detail: str | None = None
