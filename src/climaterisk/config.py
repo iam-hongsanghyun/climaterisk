@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # Optional Copernicus DEM GeoTIFF (topography) for TC storm-surge (TCSurgeBathtub).
     # A manual drop-in; injected into the worker env as CLIMATERISK_DEM_PATH when set.
     dem_path: str | None = None
+    # Optional EM-DAT disaster-loss CSV (login-gated) for impact-function calibration.
+    # Injected into the worker env as CLIMATERISK_EMDAT_PATH when set.
+    emdat_path: str | None = None
 
     # Logging
     log_level: str = "INFO"

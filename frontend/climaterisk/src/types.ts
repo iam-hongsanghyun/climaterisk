@@ -253,6 +253,17 @@ export interface SupplyChainResult {
   detail: string | null;
 }
 
+export interface CalibrationResult {
+  status: string;
+  peril: string;
+  country: string;
+  param: string;
+  initial: number;
+  calibrated: number;
+  observed_annual_loss: number;
+  detail: string | null;
+}
+
 export interface Run {
   id: string;
   session_id: string;
@@ -266,6 +277,7 @@ export interface Run {
     | LitPopResult
     | IngestResult
     | SupplyChainResult
+    | CalibrationResult
     | null;
   detail: string | null;
   created_at: string;

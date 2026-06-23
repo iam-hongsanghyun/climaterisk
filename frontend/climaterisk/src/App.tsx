@@ -104,7 +104,15 @@ export function App() {
             <ScenariosView model={model} libraries={libraries} patchModel={patchModel} />
           )}
           {view === "vulnerability" && (
-            <VulnerabilityView model={model} libraries={libraries} patchModel={patchModel} />
+            <VulnerabilityView
+              model={model}
+              libraries={libraries}
+              patchModel={patchModel}
+              calRun={results.calRun}
+              calBusy={results.calBusy}
+              calErr={results.calErr}
+              onCalibrate={results.runCalibration}
+            />
           )}
           {view === "results" && (
             <ResultsView

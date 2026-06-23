@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getRun,
+  submitCalibration,
   submitCostBenefit,
   submitLitPop,
   submitRun,
@@ -45,6 +46,10 @@ export function useResults(sessionId: string) {
   const [scBusy, setScBusy] = useState(false);
   const [scErr, setScErr] = useState<string | null>(null);
 
+  const [calRun, setCalRun] = useState<Run | null>(null);
+  const [calBusy, setCalBusy] = useState(false);
+  const [calErr, setCalErr] = useState<string | null>(null);
+
   // Reset everything when the session changes.
   const sid = useRef(sessionId);
   useEffect(() => {
@@ -62,6 +67,8 @@ export function useResults(sessionId: string) {
     setLitpopErr(null);
     setScRun(null);
     setScErr(null);
+    setCalRun(null);
+    setCalErr(null);
   }, [sessionId]);
 
   // Poll the LitPop run while in flight.
@@ -139,6 +146,32 @@ export function useResults(sessionId: string) {
       setScErr(String(e));
     } finally {
       setScBusy(false);
+    }
+  };
+
+  // Poll the calibration run while in flight.
+  useEffect(() => {
+    if (!calRun || (calRun.status !== "queued" && calRun.status !== "running")) return;
+    const t = setTimeout(async () => {
+      try {
+        setCalRun(await getRun(sessionId, calRun.id));
+      } catch (e) {
+        setCalErr(String(e));
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [calRun, sessionId]);
+
+  const runCalibration = async () => {
+    setCalErr(null);
+    setCalBusy(true);
+    setCalRun(null);
+    try {
+      setCalRun(await submitCalibration(sessionId));
+    } catch (e) {
+      setCalErr(String(e));
+    } finally {
+      setCalBusy(false);
     }
   };
 
@@ -220,5 +253,9 @@ export function useResults(sessionId: string) {
     scBusy,
     scErr,
     runSupplyChain,
+    calRun,
+    calBusy,
+    calErr,
+    runCalibration,
   };
 }
