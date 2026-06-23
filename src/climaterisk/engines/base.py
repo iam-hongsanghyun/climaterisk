@@ -180,6 +180,8 @@ class CostBenefitRequest(BaseModel):
     climate_scenario: str
     anchor_years: list[int]
     discount_rate: float = 0.05
+    # Optional year-varying discount schedule {year: rate}; overrides the flat rate.
+    discount_schedule: dict[str, float] | None = None
     assets: list[AssetSpec]
     measures: list[MeasureSpec]
 
@@ -188,11 +190,13 @@ class CostBenefitRequest(BaseModel):
         cls, portfolio: Portfolio, measures: list[MeasureSpec]
     ) -> CostBenefitRequest:
         """Build a cost-benefit request from the session model + adaptation measures."""
+        sched = portfolio.run_config.options.get("discount_schedule")
         return cls(
             session_id=portfolio.id,
             climate_scenario=portfolio.scenario.climate,
             anchor_years=portfolio.scenario.anchor_years,
             discount_rate=portfolio.run_config.discount_rate,
+            discount_schedule=sched if isinstance(sched, dict) else None,
             assets=resolve_asset_specs(portfolio),
             measures=measures,
         )

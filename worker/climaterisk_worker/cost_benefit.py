@@ -97,7 +97,7 @@ def compute_cost_benefit(request: dict[str, Any]) -> dict[str, Any]:
     impf_set = ImpactFuncSet(
         [ImpfTropCyclone.from_emanuel_usa(impf_id=i + 1, v_half=v) for i, v in enumerate(v_halves)]
     )
-    exp = _build_exposures(
+    exp, _ = _build_exposures(
         assets, "impf_TC", [id_by_v[round(float(a["tc_v_half"]), 1)] for a in assets]
     )
 
@@ -105,7 +105,16 @@ def compute_cost_benefit(request: dict[str, Any]) -> dict[str, Any]:
     future = _tc_hazard(iso3, scenario, ref_year)
 
     measure_set = MeasureSet(measure_list=[_build_measure(m) for m in measures])
-    disc = DiscRates(years=np.arange(2000, 2101), rates=np.full(101, discount_rate))
+    # Year-varying discount rates: a {year: rate} schedule (linearly interpolated over the
+    # horizon) if supplied, else the flat discount_rate. CLIMADA DiscRates entity component.
+    years = np.arange(2000, 2101)
+    schedule = request.get("discount_schedule") or {}
+    if schedule:
+        pts = sorted((int(y), float(r)) for y, r in schedule.items())
+        rates = np.interp(years, [y for y, _ in pts], [r for _, r in pts])
+    else:
+        rates = np.full(len(years), discount_rate)
+    disc = DiscRates(years=years, rates=rates)
     entity = Entity(
         exposures=exp, impact_func_set=impf_set, measure_set=measure_set, disc_rates=disc
     )
