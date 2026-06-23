@@ -51,6 +51,23 @@ export function ScenariosView({
             ))}
           </select>
         </div>
+        {run_config.perils.includes("tropical_cyclone") && (
+          <div className="field">
+            <label>Tropical-cyclone future hazard</label>
+            <select
+              value={(run_config.options?.tc_future_method as string) ?? "dataapi"}
+              onChange={(e) => {
+                const opts = { ...run_config.options };
+                if (e.target.value === "knutson") opts.tc_future_method = "knutson";
+                else delete opts.tc_future_method;
+                setRun({ options: opts });
+              }}
+            >
+              <option value="dataapi">CLIMADA Data API future sets (default)</option>
+              <option value="knutson">Knutson/Jewson climate scaling (any year)</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="card">

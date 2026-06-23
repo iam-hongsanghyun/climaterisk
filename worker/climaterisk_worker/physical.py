@@ -87,7 +87,10 @@ def _impact(exp, impf_set, haz):  # type: ignore[no-untyped-def]
 
 
 def _run_tropical_cyclone(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from climada.entity import ImpactFuncSet
     from climada.entity.impact_funcs.trop_cyclone import ImpfTropCyclone
@@ -128,11 +131,25 @@ def _run_tropical_cyclone(
             "tropical_cyclone", properties={**props, "spatial_coverage": "global"}
         )
 
-    # Local hazard catalog takes precedence over the live Data API.
+    # Future-hazard resolution: local catalog first; then either the Data API's future
+    # set (default) or Knutson/Jewson climate-change scaling of the present hazard
+    # (opt-in via options["tc_future_method"]=="knutson" — derives a future for any
+    # scenario/year, frequency-scaled per Jewson 2022).
+    use_knutson = bool(options and options.get("tc_future_method") == "knutson")
     cat_haz = catalog.load_hazard("tropical_cyclone", climate_scenario, iso3 or "global", ref_year)
-    future = _impact(exp, impf_set, cat_haz or fetch(climate_scenario, ref_year))
-    present = _impact(exp, impf_set, fetch("None", None))
-    src = "local catalog" if cat_haz is not None else f"{iso3 or 'global'} Data API"
+    present_haz = fetch("None", None)
+    if cat_haz is not None:
+        future_haz, src = cat_haz, "local catalog"
+    elif use_knutson:
+        rcp = {"rcp26": "2.6", "rcp45": "4.5", "rcp60": "6.0", "rcp85": "8.5"}.get(
+            climate_scenario, "4.5"
+        )
+        future_haz = present_haz.apply_climate_scenario_knu(scenario=rcp, target_year=ref_year)
+        src = f"Knutson/Jewson scaling (rcp{rcp}, {ref_year})"
+    else:
+        future_haz, src = fetch(climate_scenario, ref_year), f"{iso3 or 'global'} Data API"
+    future = _impact(exp, impf_set, future_haz)
+    present = _impact(exp, impf_set, present_haz)
 
     eai = [float(x) for x in future.eai_exp]
     fc = future.calc_freq_curve(_RETURN_PERIODS)
@@ -161,7 +178,10 @@ def _run_tropical_cyclone(
 
 
 def _run_river_flood(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     import numpy as np
     from climada.entity import ImpactFunc, ImpactFuncSet
@@ -243,7 +263,10 @@ def _run_river_flood(
 
 
 def _run_wildfire(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     import numpy as np
     from climada.entity import ImpactFunc, ImpactFuncSet
@@ -306,7 +329,10 @@ def _run_wildfire(
 
 
 def _run_european_windstorm(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from climada.entity import ImpactFuncSet
     from climada.entity.impact_funcs.storm_europe import ImpfStormEurope
@@ -373,7 +399,10 @@ def _run_european_windstorm(
 
 
 def _run_earthquake(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Earthquake (geophysical — observed catalogue, no climate scenario; MMI intensity)."""
     import numpy as np
@@ -424,7 +453,10 @@ def _run_earthquake(
 
 
 def _run_coastal_flood(
-    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Coastal flood / sea-level rise — depth-damage on a locally-ingested Aqueduct hazard.
 
@@ -520,6 +552,7 @@ def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
     scenario: str = request["climate_scenario"]
     anchor_years: list[int] = request["anchor_years"]
     assets: list[dict[str, Any]] = request["assets"]
+    options: dict[str, Any] = request.get("options", {})
 
     results: list[dict[str, Any]] = []
     for peril in perils:
@@ -534,7 +567,7 @@ def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
             )
             continue
         try:
-            results.append(runner(assets, scenario, anchor_years))
+            results.append(runner(assets, scenario, anchor_years, options))
         except Exception as exc:
             results.append(
                 {"peril": peril, "status": "error", "detail": f"{type(exc).__name__}: {exc}"}

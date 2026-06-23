@@ -88,6 +88,8 @@ class PhysicalRunRequest(BaseModel):
     climate_scenario: str
     anchor_years: list[int]
     assets: list[AssetSpec]
+    # Free-form run options forwarded to the worker (e.g. {"tc_future_method": "knutson"}).
+    options: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
     def from_portfolio(cls, portfolio: Portfolio) -> PhysicalRunRequest:
@@ -98,6 +100,7 @@ class PhysicalRunRequest(BaseModel):
             climate_scenario=portfolio.scenario.climate,
             anchor_years=portfolio.scenario.anchor_years,
             assets=resolve_asset_specs(portfolio),
+            options=dict(portfolio.run_config.options),
         )
 
 
