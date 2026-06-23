@@ -302,18 +302,24 @@ class LitPopRequest(BaseModel):
     mode: str = "litpop"
     session_id: str
     country: str
-    exposure_source: str = "litpop"  # litpop | blackmarble | gdp | crop | osm
+    exposure_source: str = "litpop"  # litpop | blackmarble | gdp | crop | osm | raster
+    peril: str = "tropical_cyclone"  # any physical peril runs on the modeled grid
     climate_scenario: str
     anchor_years: list[int]
 
     @classmethod
     def from_portfolio(
-        cls, portfolio: Portfolio, country: str, exposure_source: str = "litpop"
+        cls,
+        portfolio: Portfolio,
+        country: str,
+        exposure_source: str = "litpop",
+        peril: str = "tropical_cyclone",
     ) -> LitPopRequest:
         return cls(
             session_id=portfolio.id,
             country=country,
             exposure_source=exposure_source,
+            peril=peril,
             climate_scenario=portfolio.scenario.climate,
             anchor_years=portfolio.scenario.anchor_years,
         )

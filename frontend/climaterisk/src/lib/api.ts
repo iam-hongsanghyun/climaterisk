@@ -86,8 +86,11 @@ export async function submitLitPop(
   sessionId: string,
   country: string,
   source = "litpop",
+  peril = "tropical_cyclone",
 ): Promise<Run> {
-  const qs = `country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}`;
+  const qs =
+    `country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}` +
+    `&peril=${encodeURIComponent(peril)}`;
   return http<Run>(`/api/session/${sessionId}/litpop?${qs}`, { method: "POST" });
 }
 

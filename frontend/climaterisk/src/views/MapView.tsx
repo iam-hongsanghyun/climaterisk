@@ -44,11 +44,12 @@ export function MapView({
   litpopRun: Run | null;
   litpopBusy: boolean;
   litpopErr: string | null;
-  onRunLitpop: (country: string, source: string) => void;
+  onRunLitpop: (country: string, source: string, peril: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [litpopCountry, setLitpopCountry] = useState("JPN");
   const [litpopSource, setLitpopSource] = useState("litpop");
+  const [litpopPeril, setLitpopPeril] = useState("tropical_cyclone");
   const selected = model.assets.find((a) => a.id === selectedId) ?? null;
   const litpop = litpopRun?.status === "done" ? (litpopRun.output as LitPopResult | null) : null;
   const litpopRunning = litpopRun?.status === "queued" || litpopRun?.status === "running";
@@ -139,9 +140,9 @@ export function MapView({
             <div className="section-divider">
               <div className="section-title">Modeled exposure</div>
               <p className="hint">
-                Model a whole country's asset values instead of hand-entering assets, then run TC
-                impact. LitPop (population × nightlights) is built in; other sources are login-gated
-                or large and report what to download if absent.
+                Model a whole country's asset values instead of hand-entering assets, then run any
+                peril on the grid. LitPop (population × nightlights) is built in; other sources are
+                login-gated or large and report what to download if absent.
               </p>
               <div className="form-row" style={{ marginTop: 8 }}>
                 <select
@@ -157,6 +158,20 @@ export function MapView({
                   <option value="osm">OSM buildings (osm-flex)</option>
                   <option value="raster">Population raster (WorldPop/GHSL)</option>
                 </select>
+                <select
+                  className="field-inline"
+                  value={litpopPeril}
+                  onChange={(e) => setLitpopPeril(e.target.value)}
+                  title="Peril to run on the modeled grid"
+                >
+                  {libraries.perils.perils
+                    .filter((p) => p.supported_mvp)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                </select>
                 <input
                   className="field-inline"
                   value={litpopCountry}
@@ -167,7 +182,7 @@ export function MapView({
                 />
                 <button
                   className="btn"
-                  onClick={() => onRunLitpop(litpopCountry, litpopSource)}
+                  onClick={() => onRunLitpop(litpopCountry, litpopSource, litpopPeril)}
                   disabled={litpopBusy || litpopRunning || litpopCountry.length !== 3}
                   title={litpopCountry.length !== 3 ? "Enter a 3-letter ISO country code" : ""}
                 >
@@ -192,7 +207,8 @@ export function MapView({
                   {litpop.source_label ?? "LitPop"} · {litpop.country}:{" "}
                   {litpop.n_points.toLocaleString()} cells · exposed{" "}
                   {money(litpop.total_value, litpop.currency)} · AAI{" "}
-                  {money(litpop.aai_agg, litpop.currency)}/yr (TC {litpop.future_year})
+                  {money(litpop.aai_agg, litpop.currency)}/yr ({litpop.peril.replace(/_/g, " ")}
+                  {litpop.future_year ? ` ${litpop.future_year}` : ""})
                 </p>
               )}
             </div>

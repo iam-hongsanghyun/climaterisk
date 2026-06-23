@@ -249,12 +249,12 @@ export function useResults(sessionId: string) {
     }
   };
 
-  const runLitpop = async (country: string, source = "litpop") => {
+  const runLitpop = async (country: string, source = "litpop", peril = "tropical_cyclone") => {
     setLitpopErr(null);
     setLitpopBusy(true);
     setLitpopRun(null);
     try {
-      setLitpopRun(await submitLitPop(sessionId, country, source));
+      setLitpopRun(await submitLitPop(sessionId, country, source, peril));
     } catch (e) {
       setLitpopErr(String(e));
     } finally {
