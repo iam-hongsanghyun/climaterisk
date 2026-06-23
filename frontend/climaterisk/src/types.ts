@@ -182,6 +182,12 @@ export interface Yearset {
   max: number;
   losses: number[];
 }
+export interface WarnLevels {
+  n_levels: number;
+  counts: number[];
+  thresholds: number[];
+  unit: string;
+}
 export interface PhysicalRunResult {
   peril: string;
   status: string;
@@ -193,6 +199,7 @@ export interface PhysicalRunResult {
   per_asset: AssetImpact[];
   freq_curve: FreqCurve | null;
   yearset?: Yearset | null;
+  warn_levels?: WarnLevels | null;
   result_kind?: "monetary" | "yield" | "productivity";
   metric_unit?: string | null;
   detail: string | null;

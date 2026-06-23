@@ -138,6 +138,18 @@ class Yearset(BaseModel):
     losses: list[float]
 
 
+class WarnLevels(BaseModel):
+    """Per-asset hazard-intensity warning bands (CLIMADA petals ``Warn.bin_map``).
+
+    ``counts[i]`` = assets in band i+1 (1 = lowest intensity … ``n_levels`` = highest).
+    """
+
+    n_levels: int
+    counts: list[int]
+    thresholds: list[float]
+    unit: str
+
+
 class PhysicalRunResult(BaseModel):
     """Engine output for one peril within a run (future horizon, plus present-day delta)."""
 
@@ -151,6 +163,7 @@ class PhysicalRunResult(BaseModel):
     per_asset: list[AssetImpact] = Field(default_factory=list)
     freq_curve: FreqCurve | None = None
     yearset: Yearset | None = None  # sampled annual-loss distribution (CLIMADA yearsets)
+    warn_levels: WarnLevels | None = None  # per-asset hazard-intensity warning bands
     # "monetary" (AAI in currency) | "yield" | "productivity" — non-damage perils
     # (heatwave, drought, crop yield) report a fractional/index metric, not currency.
     result_kind: str = "monetary"

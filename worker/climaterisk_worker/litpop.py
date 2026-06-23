@@ -116,6 +116,7 @@ def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
         "result_kind": res.get("result_kind", "monetary"),
         "metric_unit": res.get("metric_unit"),
         "yearset": res.get("yearset"),
+        "warn_levels": res.get("warn_levels"),
         "freq_curve": res.get("freq_curve"),
         "detail": f"{source_label} {country}: {len(grid_assets)} cells × {peril}",
     }

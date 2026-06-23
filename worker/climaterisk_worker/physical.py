@@ -144,10 +144,48 @@ def _eai_by_asset(impact, source_idx, n_assets: int) -> list[float]:  # type: ig
     return [float(x) for x in out]
 
 
+def _warn_levels(haz, exp, n_levels: int = 5):  # type: ignore[no-untyped-def]
+    """Bin each asset's hazard intensity into ``n_levels`` warning bands (petals ``Warn``).
+
+    Uses CLIMADA petals ``Warn.bin_map`` on the per-asset max hazard intensity (quantile
+    thresholds of the positive intensities), returning how many assets fall in each band —
+    level 1 = lowest intensity, ``n_levels`` = highest. Returns None when no asset is exposed.
+    """
+    import numpy as np
+
+    try:
+        from climada_petals.engine.warn import Warn
+
+        col = next((c for c in exp.gdf.columns if str(c).startswith("centr_")), None)
+        if col is None:
+            return None
+        centr = exp.gdf[col].to_numpy().astype(int)
+        per_centroid = np.asarray(haz.intensity.max(axis=0).todense()).ravel()
+        safe = np.clip(centr, 0, len(per_centroid) - 1)
+        inten = np.where(centr >= 0, per_centroid[safe], 0.0)
+        pos = inten[inten > 0]
+        if pos.size == 0:
+            return None
+        qs = sorted({float(np.quantile(pos, q)) for q in np.linspace(0.0, 0.8, n_levels)})
+        thresholds = [*qs, float(pos.max()) + 1.0]  # bin_map needs an upper edge
+        binned = np.asarray(Warn.bin_map(inten, thresholds)).ravel()
+        counts = [int((binned == lvl).sum()) for lvl in range(1, len(thresholds))]
+        return {
+            "n_levels": len(counts),
+            "counts": counts,
+            "thresholds": [round(t, 3) for t in thresholds[:-1]],
+            "unit": str(getattr(haz, "units", "") or ""),
+        }
+    except Exception:
+        return None
+
+
 def _impact(exp, impf_set, haz):  # type: ignore[no-untyped-def]
     from climada.engine import ImpactCalc
 
-    return ImpactCalc(exp, impf_set, haz).impact(save_mat=True, assign_centroids=True)
+    imp = ImpactCalc(exp, impf_set, haz).impact(save_mat=True, assign_centroids=True)
+    imp._warn = _warn_levels(haz, exp)  # stash warn-level breakdown for the result builder
+    return imp
 
 
 _YEARSET_SEED = 1789  # fixed → reproducible annual-loss sampling (CLAUDE.md: pin seeds)
@@ -258,6 +296,7 @@ def _run_tropical_cyclone(
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(future)
+    _warn = getattr(future, "_warn", None)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
     delta = ((future_aai - present_aai) / present_aai * 100.0) if present_aai > 0 else None
@@ -275,6 +314,7 @@ def _run_tropical_cyclone(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -348,6 +388,7 @@ def _run_river_flood(
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(future)
+    _warn = getattr(future, "_warn", None)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
     delta = ((future_aai - present_aai) / present_aai * 100.0) if present_aai > 0 else None
@@ -365,6 +406,7 @@ def _run_river_flood(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -420,6 +462,7 @@ def _run_wildfire(
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(imp)
+    _warn = getattr(imp, "_warn", None)
     return {
         "peril": "wildfire",
         "status": "ok",
@@ -433,6 +476,7 @@ def _run_wildfire(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -490,6 +534,7 @@ def _run_european_windstorm(
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(future)
+    _warn = getattr(future, "_warn", None)
     future_aai = float(future.aai_agg)
     delta = (
         ((future_aai - present_aai) / present_aai * 100.0)
@@ -509,6 +554,7 @@ def _run_european_windstorm(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -552,6 +598,7 @@ def _run_earthquake(
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(imp)
+    _warn = getattr(imp, "_warn", None)
     return {
         "peril": "earthquake",
         "status": "ok",
@@ -565,6 +612,7 @@ def _run_earthquake(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -629,6 +677,7 @@ def _run_coastal_flood(
     eai = _eai_by_asset(fut, src_idx, len(assets))
     fc = fut.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(fut)
+    _warn = getattr(fut, "_warn", None)
     future_aai = float(fut.aai_agg)
     delta = (
         ((future_aai - present_aai) / present_aai * 100.0)
@@ -648,6 +697,7 @@ def _run_coastal_flood(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -722,6 +772,7 @@ def _run_tc_surge(
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(imp)
+    _warn = getattr(imp, "_warn", None)
     return {
         "peril": "tc_surge",
         "status": "ok",
@@ -735,6 +786,7 @@ def _run_tc_surge(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -868,6 +920,7 @@ def _run_catalog_peril(
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(imp)
+    _warn = getattr(imp, "_warn", None)
     return {
         "peril": peril,
         "status": "ok",
@@ -881,6 +934,7 @@ def _run_catalog_peril(
             for i, a in enumerate(assets)
         ],
         "yearset": _ys,
+        "warn_levels": _warn,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],

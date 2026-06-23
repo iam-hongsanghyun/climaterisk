@@ -103,6 +103,31 @@ function PhysicalResult({ result, currency }: { result: PhysicalRunResult; curre
           </p>
         </div>
       )}
+      {result.warn_levels && result.warn_levels.counts.some((c) => c > 0) && (
+        <div style={{ marginTop: 14 }}>
+          <div className="section-title" style={{ marginBottom: 6 }}>
+            Hazard warning bands ({result.warn_levels.unit || "intensity"})
+          </div>
+          <div style={{ display: "flex", height: 22, borderRadius: 5, overflow: "hidden", border: "1px solid var(--border)" }}>
+            {result.warn_levels.counts.map((c, i) => {
+              const total = result.warn_levels!.counts.reduce((a, b) => a + b, 0) || 1;
+              const hue = 120 - (i / Math.max(result.warn_levels!.n_levels - 1, 1)) * 120; // green→red
+              return c > 0 ? (
+                <div
+                  key={i}
+                  title={`Band ${i + 1}: ${c} asset(s)`}
+                  style={{ width: `${(c / total) * 100}%`, background: `hsl(${hue} 65% 45%)` }}
+                />
+              ) : null;
+            })}
+          </div>
+          <p className="hint" style={{ marginTop: 6 }}>
+            Assets binned by peak hazard intensity (CLIMADA <code>Warn.bin_map</code>): band 1 = lowest,{" "}
+            {result.warn_levels.n_levels} = highest. Counts:{" "}
+            {result.warn_levels.counts.map((c, i) => `L${i + 1}:${c}`).join(" · ")}.
+          </p>
+        </div>
+      )}
       <MethodNote>
         <strong>Probability × impact.</strong> <em>Avg Annual Impact = Σ events (frequency × damage)</em>,
         computed by CLIMADA over a probabilistic hazard event set × a per-asset vulnerability curve ×
