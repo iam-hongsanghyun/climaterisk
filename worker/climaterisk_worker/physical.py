@@ -63,21 +63,80 @@ def _single_country_iso3(iso3s: list[str | None]) -> str | None:
     return next(iter(uniq)) if len(uniq) == 1 and None not in iso3s else None
 
 
+def _footprint_points(geom: dict[str, Any], res_deg: float = 0.02, max_points: int = 64):  # type: ignore[no-untyped-def]
+    """Disaggregate a GeoJSON polygon footprint to interior grid points (lat, lon).
+
+    A regular ``res_deg`` grid over the polygon's bounds, kept where inside the polygon;
+    falls back to the centroid for tiny polygons and evenly subsamples to ``max_points``.
+    """
+    import numpy as np
+    from shapely.geometry import Point, shape
+
+    poly = shape(geom)
+    minx, miny, maxx, maxy = poly.bounds
+    xs = np.arange(minx, maxx + 1e-9, res_deg)
+    ys = np.arange(miny, maxy + 1e-9, res_deg)
+    pts = [(float(y), float(x)) for x in xs for y in ys if poly.contains(Point(x, y))]
+    if not pts:
+        c = poly.centroid
+        return [(float(c.y), float(c.x))]
+    if len(pts) > max_points:
+        step = len(pts) / max_points
+        pts = [pts[int(i * step)] for i in range(max_points)]
+    return pts
+
+
 def _build_exposures(assets: list[dict[str, Any]], impf_col: str, impf_ids: list[int]):  # type: ignore[no-untyped-def]
+    """Build a CLIMADA ``Exposures`` and a per-row source-asset index.
+
+    Point assets contribute one row; footprint assets (carrying a GeoJSON ``geometry``)
+    are disaggregated to interior grid points with the asset value split evenly across
+    them. The returned ``source_idx[row]`` maps each exposure row back to its asset, so
+    per-asset impact can be re-aggregated (see ``_eai_by_asset``).
+    """
+    import numpy as np
     import pandas as pd
     from climada.entity import Exposures
 
-    return Exposures(
-        pd.DataFrame(
-            {
-                "latitude": [a["lat"] for a in assets],
-                "longitude": [a["lon"] for a in assets],
-                "value": [float(a["value"]) for a in assets],
-                impf_col: impf_ids,
-            }
-        ),
+    lats: list[float] = []
+    lons: list[float] = []
+    vals: list[float] = []
+    impfs: list[int] = []
+    source_idx: list[int] = []
+    for i, a in enumerate(assets):
+        geom = a.get("geometry")
+        pts = _footprint_points(geom) if geom else None
+        if pts:
+            v = float(a["value"]) / len(pts)
+            for plat, plon in pts:
+                lats.append(plat)
+                lons.append(plon)
+                vals.append(v)
+                impfs.append(impf_ids[i])
+                source_idx.append(i)
+        else:
+            lats.append(float(a["lat"]))
+            lons.append(float(a["lon"]))
+            vals.append(float(a["value"]))
+            impfs.append(impf_ids[i])
+            source_idx.append(i)
+
+    exp = Exposures(
+        pd.DataFrame({"latitude": lats, "longitude": lons, "value": vals, impf_col: impfs}),
         value_unit=assets[0]["currency"] if assets else "USD",
     )
+    return exp, np.array(source_idx, dtype=int)
+
+
+def _eai_by_asset(impact, source_idx, n_assets: int) -> list[float]:  # type: ignore[no-untyped-def]
+    """Sum per-row expected-annual-impact back to each original asset (footprint-aware)."""
+    import numpy as np
+
+    eai = np.asarray(impact.eai_exp, dtype=float)
+    out = np.zeros(n_assets)
+    for row, s in enumerate(source_idx):
+        out[int(s)] += eai[row]
+    return [float(x) for x in out]
 
 
 def _impact(exp, impf_set, haz):  # type: ignore[no-untyped-def]
@@ -107,7 +166,7 @@ def _run_tropical_cyclone(
         [ImpfTropCyclone.from_emanuel_usa(impf_id=i + 1, v_half=v) for i, v in enumerate(v_halves)]
     )
     impf_ids = [impf_id_by_v[round(float(a["tc_v_half"]), 1)] for a in assets]
-    exp = _build_exposures(assets, "impf_TC", impf_ids)
+    exp, src_idx = _build_exposures(assets, "impf_TC", impf_ids)
 
     client = Client()
 
@@ -151,7 +210,7 @@ def _run_tropical_cyclone(
     future = _impact(exp, impf_set, future_haz)
     present = _impact(exp, impf_set, present_haz)
 
-    eai = [float(x) for x in future.eai_exp]
+    eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
@@ -215,7 +274,7 @@ def _run_river_flood(
         )
     impf_set = ImpactFuncSet(funcs)
     impf_ids = [id_by_curve[c] for c in curve_key]
-    exp = _build_exposures(assets, "impf_RF", impf_ids)
+    exp, src_idx = _build_exposures(assets, "impf_RF", impf_ids)
 
     client = Client()
 
@@ -236,7 +295,7 @@ def _run_river_flood(
     present = _impact(exp, impf_set, fetch("historical", "1980_2000"))
     src = "local catalog" if cat_haz is not None else f"{iso3 or 'global'} {scenario} {year_range}"
 
-    eai = [float(x) for x in future.eai_exp]
+    eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
@@ -304,9 +363,9 @@ def _run_wildfire(
         ]
     )
     impf_ids = [id_by[round(float(a["wf_max_mdd"]), 3)] for a in assets]
-    exp = _build_exposures(assets, f"impf_{htype}", impf_ids)
+    exp, src_idx = _build_exposures(assets, f"impf_{htype}", impf_ids)
     imp = _impact(exp, impf_set, haz)
-    eai = [float(x) for x in imp.eai_exp]
+    eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     return {
         "peril": "wildfire",
@@ -356,7 +415,7 @@ def _run_european_windstorm(
     gcm = fut.properties.get("gcm")
 
     impf_set = ImpactFuncSet([ImpfStormEurope.from_schwierz()])  # haz_type WS, id 1 (calibrated)
-    exp = _build_exposures(assets, "impf_WS", [1] * len(assets))
+    exp, src_idx = _build_exposures(assets, "impf_WS", [1] * len(assets))
     future = _impact(exp, impf_set, client.get_hazard("storm_europe", properties=fut.properties))
 
     present_aai: float | None = None
@@ -370,7 +429,7 @@ def _run_european_windstorm(
         except Exception:
             present_aai = None
 
-    eai = [float(x) for x in future.eai_exp]
+    eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
     future_aai = float(future.aai_agg)
     delta = (
@@ -428,9 +487,9 @@ def _run_earthquake(
         intensity_unit="MMI",
         name="earthquake_mmi",
     )
-    exp = _build_exposures(assets, f"impf_{htype}", [1] * len(assets))
+    exp, src_idx = _build_exposures(assets, f"impf_{htype}", [1] * len(assets))
     imp = _impact(exp, ImpactFuncSet([impf]), haz)
-    eai = [float(x) for x in imp.eai_exp]
+    eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     return {
         "peril": "earthquake",
@@ -499,13 +558,13 @@ def _run_coastal_flood(
         )
     impf_set = ImpactFuncSet(funcs)
     impf_ids = [id_by_curve[c] for c in curve_key]
-    exp = _build_exposures(assets, "impf_CF", impf_ids)
+    exp, src_idx = _build_exposures(assets, "impf_CF", impf_ids)
 
     fut = _impact(exp, impf_set, future)
     present = catalog.load_hazard("coastal_flood", "historical", region, None)
     present_aai = float(_impact(exp, impf_set, present).aai_agg) if present is not None else None
 
-    eai = [float(x) for x in fut.eai_exp]
+    eai = _eai_by_asset(fut, src_idx, len(assets))
     fc = fut.calc_freq_curve(_RETURN_PERIODS)
     future_aai = float(fut.aai_agg)
     delta = (

@@ -49,7 +49,7 @@ def tc_impact():  # type: ignore[no-untyped-def]
     if haz is None:
         pytest.skip("local catalog hazard TC/rcp45/JPN/2040 not present")
     impf_set = ImpactFuncSet([ImpfTropCyclone.from_emanuel_usa(impf_id=1, v_half=_V_HALF)])
-    exp = physical._build_exposures([_TOKYO], "impf_TC", [1])
+    exp, _ = physical._build_exposures([_TOKYO], "impf_TC", [1])
     return physical._impact(exp, impf_set, haz)
 
 
