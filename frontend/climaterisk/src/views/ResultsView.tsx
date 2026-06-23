@@ -1,7 +1,13 @@
 import type { PhysicalRunOutput, PhysicalRunResult, Portfolio, Run, TransitionResult } from "../types";
 import { money } from "../lib/format";
+import { lazy, Suspense } from "react";
 import { ResultsMap } from "../components/ResultsMap";
 import { FreqCurveChart } from "../components/FreqCurveChart";
+
+// AG-Grid is heavy (~1 MB) — load it only when a multi-asset result renders.
+const AssetGrid = lazy(() =>
+  import("../components/AssetGrid").then((m) => ({ default: m.AssetGrid })),
+);
 import { TransitionChart } from "../components/TransitionChart";
 import { MethodNote } from "../components/MethodNote";
 import { Aggregation } from "../components/Aggregation";
@@ -55,6 +61,16 @@ function PhysicalResult({ result, currency }: { result: PhysicalRunResult; curre
       <div style={{ marginTop: 14 }}>
         <ResultsMap impacts={result.per_asset} currency={currency} />
       </div>
+      {result.per_asset.length > 1 && (
+        <div style={{ marginTop: 14 }}>
+          <div className="section-title" style={{ marginBottom: 6 }}>
+            Per-asset expected annual impact
+          </div>
+          <Suspense fallback={<p className="hint">Loading grid…</p>}>
+            <AssetGrid impacts={result.per_asset} currency={currency} />
+          </Suspense>
+        </div>
+      )}
       {result.freq_curve && (
         <div style={{ marginTop: 14 }}>
           <div className="section-title" style={{ marginBottom: 6 }}>

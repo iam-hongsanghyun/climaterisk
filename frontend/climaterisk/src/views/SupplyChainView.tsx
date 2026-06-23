@@ -1,6 +1,7 @@
 import type { Portfolio, Run, SupplyChainResult } from "../types";
 import { money } from "../lib/format";
 import { MethodNote } from "../components/MethodNote";
+import { BarsChart } from "../components/BarsChart";
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
@@ -71,22 +72,15 @@ export function SupplyChainView({
             />
           </div>
           {out.by_sector.length > 0 && (
-            <table className="agg-table" style={{ marginTop: 14 }}>
-              <thead>
-                <tr>
-                  <th>Sector</th>
-                  <th style={{ textAlign: "right" }}>Indirect impact</th>
-                </tr>
-              </thead>
-              <tbody>
-                {out.by_sector.map((s) => (
-                  <tr key={s.sector}>
-                    <td>{s.sector}</td>
-                    <td style={{ textAlign: "right" }}>{money(s.indirect, cur)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ marginTop: 14 }}>
+              <div className="section-title" style={{ marginBottom: 6 }}>
+                Indirect impact by sector
+              </div>
+              <BarsChart
+                data={out.by_sector.map((s) => ({ name: s.sector, value: s.indirect }))}
+                fmt={(v) => money(v, cur)}
+              />
+            </div>
           )}
           <MethodNote>
             <strong>Input-output propagation.</strong> Direct asset damage becomes a demand/supply

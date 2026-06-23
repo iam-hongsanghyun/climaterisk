@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { Asset, Libraries } from "../types";
-import { FootprintDrawMap } from "./FootprintDrawMap";
+
+// MapLibre is heavy (~1 MB) — load the draw map only when a footprint asset is edited.
+const FootprintDrawMap = lazy(() =>
+  import("./FootprintDrawMap").then((m) => ({ default: m.FootprintDrawMap })),
+);
 
 /** Footprint (polygon) authoring for footprint-scale assets — drawn footprints are
  *  disaggregated to grid points by the worker (value split evenly). Keeps a local text
@@ -55,12 +59,14 @@ function FootprintField({
     <div className="field">
       <label>Footprint geometry (draw a polygon, or edit GeoJSON)</label>
       <div style={{ marginBottom: 6 }}>
-        <FootprintDrawMap
-          lat={asset.lat}
-          lon={asset.lon}
-          geometry={asset.geometry}
-          onChange={(geom) => setText2(geom ? JSON.stringify(geom) : "")}
-        />
+        <Suspense fallback={<p className="hint">Loading map…</p>}>
+          <FootprintDrawMap
+            lat={asset.lat}
+            lon={asset.lon}
+            geometry={asset.geometry}
+            onChange={(geom) => setText2(geom ? JSON.stringify(geom) : "")}
+          />
+        </Suspense>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
         <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={boxAround}>

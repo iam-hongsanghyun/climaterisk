@@ -1,6 +1,7 @@
 import type { Run, UncertaintyResult } from "../types";
 import { money } from "../lib/format";
 import { MethodNote } from "./MethodNote";
+import { BarsChart } from "./BarsChart";
 
 function Histogram({ values, currency }: { values: number[]; currency: string }) {
   const W = 460;
@@ -93,26 +94,12 @@ export function UncertaintyPanel({
           <div className="section-title" style={{ marginTop: 8, marginBottom: 6 }}>
             Sobol total-order sensitivity (share of AAI variance)
           </div>
-          {Object.entries(u.sensitivity)
-            .sort((a, b) => b[1] - a[1])
-            .map(([k, v]) => (
-              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, margin: "3px 0" }}>
-                <span style={{ width: 130, fontSize: 12, color: "var(--muted)" }}>
-                  {k.replace(/_/g, " ")}
-                </span>
-                <div style={{ flex: 1, height: 14, background: "var(--panel-2)", borderRadius: 3 }}>
-                  <div
-                    style={{
-                      width: `${Math.min(100, v * 100)}%`,
-                      height: "100%",
-                      background: "var(--accent)",
-                      borderRadius: 3,
-                    }}
-                  />
-                </div>
-                <span style={{ width: 40, fontSize: 12, textAlign: "right" }}>{v.toFixed(2)}</span>
-              </div>
-            ))}
+          <BarsChart
+            data={Object.entries(u.sensitivity)
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, v]) => ({ name: k.replace(/_/g, " "), value: v }))}
+            fmt={(v) => v.toFixed(2)}
+          />
           <MethodNote>
             {u.n_samples} model evaluations on a Saltelli design (SALib, the engine behind
             CLIMADA <code>unsequa</code>); bars are total-order Sobol indices — each input&apos;s

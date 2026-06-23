@@ -17,4 +17,19 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Split the heavy viz libs into their own cacheable vendor chunks so no single
+    // bundle dominates (keeps the chunk-size warning quiet and first load fast).
+    chunkSizeWarningLimit: 1300,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          maplibre: ["maplibre-gl", "@mapbox/mapbox-gl-draw"],
+          charts: ["recharts"],
+          grid: ["ag-grid-community", "ag-grid-react"],
+          leaflet: ["leaflet", "react-leaflet"],
+        },
+      },
+    },
+  },
 });
