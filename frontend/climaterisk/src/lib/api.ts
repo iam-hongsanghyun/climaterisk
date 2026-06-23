@@ -81,10 +81,13 @@ export async function submitUncertainty(sessionId: string, nSamples = 50): Promi
   });
 }
 
-export async function submitLitPop(sessionId: string, country: string): Promise<Run> {
-  return http<Run>(`/api/session/${sessionId}/litpop?country=${encodeURIComponent(country)}`, {
-    method: "POST",
-  });
+export async function submitLitPop(
+  sessionId: string,
+  country: string,
+  source = "litpop",
+): Promise<Run> {
+  const qs = `country=${encodeURIComponent(country)}&source=${encodeURIComponent(source)}`;
+  return http<Run>(`/api/session/${sessionId}/litpop?${qs}`, { method: "POST" });
 }
 
 export async function submitSupplyChain(

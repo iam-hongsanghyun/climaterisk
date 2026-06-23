@@ -44,10 +44,11 @@ export function MapView({
   litpopRun: Run | null;
   litpopBusy: boolean;
   litpopErr: string | null;
-  onRunLitpop: (country: string) => void;
+  onRunLitpop: (country: string, source: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [litpopCountry, setLitpopCountry] = useState("JPN");
+  const [litpopSource, setLitpopSource] = useState("litpop");
   const selected = model.assets.find((a) => a.id === selectedId) ?? null;
   const litpop = litpopRun?.status === "done" ? (litpopRun.output as LitPopResult | null) : null;
   const litpopRunning = litpopRun?.status === "queued" || litpopRun?.status === "running";
@@ -129,12 +130,31 @@ export function MapView({
             )}
 
             <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12 }}>
-              <div className="section-title">Modeled exposure (LitPop)</div>
+              <div className="section-title">Modeled exposure</div>
               <p className="hint">
-                Model a whole country's asset values from population × nightlights (CLIMADA LitPop)
-                instead of hand-entering assets, then run TC impact.
+                Model a whole country's asset values instead of hand-entering assets, then run TC
+                impact. LitPop (population × nightlights) is built in; other sources are login-gated
+                or large and report what to download if absent.
               </p>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <select
+                  value={litpopSource}
+                  onChange={(e) => setLitpopSource(e.target.value)}
+                  style={{
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    borderRadius: 6,
+                    padding: "7px 9px",
+                  }}
+                  title="Modeled-exposure data source"
+                >
+                  <option value="litpop">LitPop (nightlight × pop)</option>
+                  <option value="blackmarble">BlackMarble (nightlights)</option>
+                  <option value="gdp">GDP2Asset (gridded GDP)</option>
+                  <option value="crop">Crop production (ISIMIP/SPAM)</option>
+                  <option value="osm">OSM buildings (osm-flex)</option>
+                </select>
                 <input
                   value={litpopCountry}
                   onChange={(e) => setLitpopCountry(e.target.value.toUpperCase())}
@@ -151,7 +171,7 @@ export function MapView({
                 />
                 <button
                   className="btn"
-                  onClick={() => onRunLitpop(litpopCountry)}
+                  onClick={() => onRunLitpop(litpopCountry, litpopSource)}
                   disabled={litpopBusy || litpopRunning || litpopCountry.length !== 3}
                 >
                   {litpopRunning ? "Modeling…" : "Model exposure"}
@@ -161,10 +181,14 @@ export function MapView({
               {litpopRun?.status === "error" && (
                 <p className="hint" style={{ color: "var(--danger)" }}>{litpopRun.detail}</p>
               )}
+              {litpop && litpop.status === "error" && (
+                <p className="hint" style={{ color: "var(--danger)" }}>{litpop.detail}</p>
+              )}
               {litpop && litpop.status === "ok" && (
                 <p className="hint">
-                  {litpop.country}: {litpop.n_points.toLocaleString()} cells ·
-                  exposed {money(litpop.total_value, litpop.currency)} · AAI{" "}
+                  {litpop.source_label ?? "LitPop"} · {litpop.country}:{" "}
+                  {litpop.n_points.toLocaleString()} cells · exposed{" "}
+                  {money(litpop.total_value, litpop.currency)} · AAI{" "}
                   {money(litpop.aai_agg, litpop.currency)}/yr (TC {litpop.future_year})
                 </p>
               )}

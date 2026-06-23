@@ -67,14 +67,20 @@ def submit_uncertainty(
 
 
 @router.post("/{session_id}/litpop", response_model=Run)
-def submit_litpop(session_id: str, country: str, store: StoreDep, manager: ManagerDep) -> Run:
-    """Submit a LitPop modeled-exposure run for a country (polled via run-status)."""
+def submit_litpop(
+    session_id: str,
+    country: str,
+    store: StoreDep,
+    manager: ManagerDep,
+    source: str = "litpop",
+) -> Run:
+    """Submit a modeled-exposure run for a country (LitPop by default; polled via run-status)."""
     portfolio = store.get(session_id)
     if portfolio is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
     if not country or len(country) != 3:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="country must be an ISO3 code")
-    return manager.submit_litpop(portfolio, country.upper())
+    return manager.submit_litpop(portfolio, country.upper(), source)
 
 
 @router.post("/{session_id}/forecast", response_model=Run)

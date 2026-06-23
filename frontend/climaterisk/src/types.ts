@@ -245,6 +245,8 @@ export interface UncertaintyResult {
 export interface LitPopResult {
   status: string;
   country: string;
+  exposure_source?: string;
+  source_label?: string;
   peril: string;
   future_year: number | null;
   total_value: number;

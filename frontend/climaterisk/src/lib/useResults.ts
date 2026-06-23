@@ -249,12 +249,12 @@ export function useResults(sessionId: string) {
     }
   };
 
-  const runLitpop = async (country: string) => {
+  const runLitpop = async (country: string, source = "litpop") => {
     setLitpopErr(null);
     setLitpopBusy(true);
     setLitpopRun(null);
     try {
-      setLitpopRun(await submitLitPop(sessionId, country));
+      setLitpopRun(await submitLitPop(sessionId, country, source));
     } catch (e) {
       setLitpopErr(String(e));
     } finally {

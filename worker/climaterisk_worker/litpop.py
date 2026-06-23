@@ -1,44 +1,42 @@
-"""LitPop modeled exposure (CLIMADA ``LitPop``) — batch D.
+"""Modeled-exposure run (CLIMADA ``LitPop`` and other builders) — batch D.
 
-Builds a gridded asset-value exposure for a country from population × nightlights
-(LitPop), then runs TC impact on it. This needs the GPW population dataset, which
-CLIMADA cannot auto-download (free NASA Earthdata login required) — so when it is
-missing we return a clear, actionable error rather than failing opaquely.
+Builds a gridded asset-value exposure for a country (LitPop population × nightlights
+by default, or another source from :mod:`climaterisk_worker.exposures`), then runs TC
+impact on it. The underlying data is login-gated/large, so missing data degrades with
+a clear, actionable message rather than failing opaquely.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-GPW_HELP = (
-    "LitPop needs the GPW v4 population GeoTIFF, which requires a free NASA Earthdata "
-    "login and cannot be auto-downloaded. Download "
-    "gpw-v4-population-count-rev11_2020_30_sec_tif.zip from "
-    "https://sedac.ciesin.columbia.edu/data/collection/gpw-v4 and unzip it under "
-    "~/climada/data/, then re-run."
-)
-
 
 def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
-    """Build a LitPop exposure for a country and compute TC impact on it."""
+    """Build a modeled country exposure and compute TC impact on it.
+
+    The exposure source defaults to LitPop but can be any builder in
+    :mod:`climaterisk_worker.exposures` (BlackMarble, GDP2Asset, …); gated/large
+    sources degrade with an actionable message rather than failing opaquely.
+    """
     import numpy as np
 
     from climaterisk_worker.cost_benefit import _tc_hazard
+    from climaterisk_worker.exposures import EXPOSURE_SOURCES, ExposureUnavailable, build_exposure
     from climaterisk_worker.physical import _TC_REF_YEARS, _nearest
 
     country = request.get("country")
     if not country:
-        return {"status": "error", "detail": "no country (ISO3) specified for LitPop"}
+        return {"status": "error", "detail": "no country (ISO3) specified for modeled exposure"}
+    source = str(request.get("exposure_source", "litpop"))
+    source_label = EXPOSURE_SOURCES.get(source, {}).get("label", source)
     scenario = request["climate_scenario"]
     anchor = request["anchor_years"]
     ref_year = _nearest(_TC_REF_YEARS, max(anchor) if anchor else _TC_REF_YEARS[0])
 
     try:
-        from climada.entity import LitPop
-
-        exp = LitPop.from_countries(country, res_arcsec=300)
-    except FileNotFoundError as exc:
-        return {"status": "error", "detail": f"{GPW_HELP} ({str(exc)[:120]})"}
+        exp = build_exposure(source, country, res_arcsec=300)
+    except ExposureUnavailable as exc:
+        return {"status": "error", "source": source, "detail": exc.detail}
 
     from climada.engine import ImpactCalc
     from climada.entity import ImpactFuncSet
@@ -69,6 +67,8 @@ def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "ok",
         "country": country,
+        "exposure_source": source,
+        "source_label": source_label,
         "peril": "tropical_cyclone",
         "future_year": ref_year,
         "total_value": float(gdf["value"].sum()),
@@ -76,5 +76,5 @@ def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
         "n_points": len(eai),
         "per_point": per_point,
         "currency": exp.value_unit or "USD",
-        "detail": f"LitPop {country}: {len(eai)} cells, TC horizon {ref_year}",
+        "detail": f"{source_label} {country}: {len(eai)} cells, TC horizon {ref_year}",
     }

@@ -97,11 +97,11 @@ class RunManager:
         run.status = "running"
         return run
 
-    def submit_litpop(self, portfolio: Portfolio, country: str) -> Run:
-        """Create a LitPop modeled-exposure run and spawn its worker."""
+    def submit_litpop(self, portfolio: Portfolio, country: str, source: str = "litpop") -> Run:
+        """Create a modeled-exposure run (LitPop or another source) and spawn its worker."""
         run_id = uuid.uuid4().hex
         run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["litpop"])
-        request = LitPopRequest.from_portfolio(portfolio, country)
+        request = LitPopRequest.from_portfolio(portfolio, country, source)
         self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
         run.status = "running"
         return run

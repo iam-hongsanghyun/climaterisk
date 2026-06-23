@@ -284,14 +284,18 @@ class LitPopRequest(BaseModel):
     mode: str = "litpop"
     session_id: str
     country: str
+    exposure_source: str = "litpop"  # litpop | blackmarble | gdp | crop | osm
     climate_scenario: str
     anchor_years: list[int]
 
     @classmethod
-    def from_portfolio(cls, portfolio: Portfolio, country: str) -> LitPopRequest:
+    def from_portfolio(
+        cls, portfolio: Portfolio, country: str, exposure_source: str = "litpop"
+    ) -> LitPopRequest:
         return cls(
             session_id=portfolio.id,
             country=country,
+            exposure_source=exposure_source,
             climate_scenario=portfolio.scenario.climate,
             anchor_years=portfolio.scenario.anchor_years,
         )
