@@ -132,7 +132,7 @@ def submit_ingest(session_id: str, body: IngestBody, store: StoreDep, manager: M
     portfolio = store.get(session_id)
     if portfolio is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
-    if body.source not in ("dataapi", "aqueduct"):
+    if body.source not in ("dataapi", "aqueduct", "copdem"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"unknown source '{body.source}'")
     if not portfolio.assets:
         raise HTTPException(

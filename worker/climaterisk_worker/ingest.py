@@ -352,27 +352,117 @@ def _fetch_country_or_global(client: Any, data_type: str, props: dict[str, str],
     return client.get_hazard(data_type, properties={**props, "spatial_coverage": "global"})
 
 
+# --- Copernicus DEM refiner (topography for TC storm surge) ---------------------
+
+_COPDEM_BASE = "https://copernicus-dem-30m.s3.amazonaws.com"
+
+
+def _copdem_tile_url(lat_sw: int, lon_sw: int) -> str:
+    """Copernicus DEM GLO-30 COG URL for the 1°×1° tile with the given SW corner."""
+    ns, ew = ("N" if lat_sw >= 0 else "S"), ("E" if lon_sw >= 0 else "W")
+    name = f"Copernicus_DSM_COG_10_{ns}{abs(lat_sw):02d}_00_{ew}{abs(lon_sw):03d}_00_DEM"
+    return f"{_COPDEM_BASE}/{name}/{name}.tif"
+
+
+def ingest_copernicus_dem(request: dict[str, Any]) -> dict[str, Any]:
+    """Mosaic Copernicus DEM GLO-30 tiles over the portfolio bbox → a local GeoTIFF for surge."""
+    import math
+
+    import rasterio
+    from rasterio.merge import merge
+
+    points = request["points"]
+    if not points:
+        raise ValueError("DEM ingest needs portfolio asset points to bound the download")
+    pad = float(request.get("pad", 0.2))
+    max_span = float(request.get("max_span", 3.0))
+    minlon, minlat, maxlon, maxlat = _bbox(points, pad, max_span)
+    region = _region_for_points(points)
+
+    tiles = [
+        (la, lo)
+        for la in range(math.floor(minlat), math.floor(maxlat) + 1)
+        for lo in range(math.floor(minlon), math.floor(maxlon) + 1)
+    ]
+    if len(tiles) > 9:
+        raise ValueError(f"DEM bbox spans {len(tiles)} tiles — portfolio too large for surge DEM")
+    srcs = []
+    for la, lo in tiles:
+        try:
+            srcs.append(rasterio.open("/vsicurl/" + _copdem_tile_url(la, lo)))
+        except Exception:  # a missing/ocean tile should not abort the mosaic
+            continue
+    if not srcs:
+        raise ValueError("no Copernicus DEM tiles available for the portfolio bbox")
+    mosaic, transform = merge(srcs, bounds=(minlon, minlat, maxlon, maxlat))
+    for s in srcs:
+        s.close()
+
+    # Decimate to ~asset-appropriate resolution: 30 m GLO-30 over a portfolio bbox is
+    # millions of cells, which makes the bathtub-surge model run out of memory. Cap the
+    # larger dimension to ~250 px (the resolution at which surge ran comfortably).
+    from rasterio import Affine
+
+    max_dim = max(int(mosaic.shape[-2]), int(mosaic.shape[-1]))
+    stride = max(1, max_dim // 250)
+    if stride > 1:
+        mosaic = mosaic[:, ::stride, ::stride]
+        transform = transform * Affine.scale(float(stride))
+
+    dem_dir = catalog.catalog_dir() / "dem"
+    dem_dir.mkdir(parents=True, exist_ok=True)
+    out = dem_dir / "portfolio_dem.tif"
+    h, w = int(mosaic.shape[-2]), int(mosaic.shape[-1])
+    with rasterio.open(
+        out,
+        "w",
+        driver="GTiff",
+        height=h,
+        width=w,
+        count=1,
+        dtype=mosaic.dtype,
+        crs="EPSG:4326",
+        transform=transform,
+    ) as dst:
+        dst.write(mosaic[0], 1)
+    return {
+        "peril": "tc_surge",
+        "source": "Copernicus DEM GLO-30 (AWS open data)",
+        "file": "dem/portfolio_dem.tif",
+        "region": region,
+        "detail": f"DEM mosaic {w}×{h} over {region} bbox written for TC surge",
+    }
+
+
 # --- dispatch ------------------------------------------------------------------
 
-_REFINERS = {"dataapi": ingest_dataapi, "aqueduct": ingest_aqueduct}
+_REFINERS = {
+    "dataapi": ingest_dataapi,
+    "aqueduct": ingest_aqueduct,
+    "copdem": ingest_copernicus_dem,
+}
 
 
 def run_ingest(request: dict[str, Any]) -> dict[str, Any]:
-    """Dispatch an ingest request, register the result in the catalog, and report it."""
+    """Dispatch an ingest request, register hazard entries in the catalog, and report it."""
     source = request.get("source", "")
     refiner = _REFINERS.get(source)
     if refiner is None:
         return {"status": "error", "source": source, "detail": f"unknown ingest source '{source}'"}
     entry = refiner(request)
-    catalog.register(entry)
-    return {
-        "status": "ok",
-        "source": source,
-        "peril": entry["peril"],
-        "entry": entry,
-        "detail": (
+    if "n_events" in entry:  # hazard entries go in the catalog manifest; DEM/topo do not
+        catalog.register(entry)
+        detail = (
             f"Ingested {entry['peril']} → local catalog "
             f"({entry['n_events']} events × {entry['n_centroids']} centroids, "
             f"{entry['climate_scenario']} {entry['region']} {entry.get('year')})."
-        ),
+        )
+    else:
+        detail = entry.get("detail", f"Ingested {source}.")
+    return {
+        "status": "ok",
+        "source": source,
+        "peril": entry.get("peril", ""),
+        "entry": entry,
+        "detail": detail,
     }

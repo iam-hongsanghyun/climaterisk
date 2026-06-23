@@ -608,12 +608,16 @@ def _run_tc_surge(
     """
     import os
 
-    # DEM check first (cheap; lets the graceful-degradation path run without CLIMADA).
+    # DEM resolution (cheap; lets the graceful-degradation path run without CLIMADA):
+    # explicit env path, else an ingested Copernicus DEM in the local catalog.
     dem = os.environ.get("CLIMATERISK_DEM_PATH")
     if not dem or not os.path.isfile(dem):
+        catalog_dem = catalog.catalog_dir() / "dem" / "portfolio_dem.tif"
+        dem = str(catalog_dem) if catalog_dem.is_file() else None
+    if not dem:
         raise ValueError(
-            "TC storm surge needs a Copernicus DEM GeoTIFF — drop one in and set "
-            "CLIMATERISK_DEM_PATH (Data tab → Copernicus DEM)."
+            "TC storm surge needs a Copernicus DEM — ingest one (Data tab → Fetch & ingest, "
+            "source 'copdem') or set CLIMATERISK_DEM_PATH."
         )
 
     import numpy as np
