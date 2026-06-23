@@ -421,7 +421,6 @@ def _run_wildfire(
     anchor_years: list[int],
     options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    import numpy as np
     from climada.entity import ImpactFunc, ImpactFuncSet
     from climada.util.api_client import Client
 
@@ -437,21 +436,17 @@ def _run_wildfire(
     wf_src = "local catalog" if cat_haz is not None else "Data API"
     htype = haz.haz_type  # "WFseason"; intensity is brightness temperature (K)
 
-    # One step damage function per distinct class max (wf_max_mdd); ramp above ~295 K.
-    intens = np.array([0.0, 294.0, 295.0, 320.0, 360.0, 500.0])
-    shape = np.array([0.0, 0.0, 0.25, 0.5, 0.85, 1.0])  # fraction of the class maximum
+    # CLIMADA's published damage form: a logistic (sigmoid) response in brightness temperature
+    # (ImpactFunc.from_sigmoid_impf), one per distinct class max. The per-class wf_max_mdd is the
+    # asymptote L; midpoint x0=325 K, steepness k over the WFseason intensity range. Replaces the
+    # prior hand-rolled step ramp. (ImpfWildfire.from_sigmoid_impf is broken in petals 6.2 — its
+    # constructor rejects the `id` the base classmethod passes — so we use the base sigmoid.)
     maxes = sorted({round(float(a["wf_max_mdd"]), 3) for a in assets})
     id_by = {m: i + 1 for i, m in enumerate(maxes)}
     impf_set = ImpactFuncSet(
         [
-            ImpactFunc(
-                haz_type=htype,
-                id=fid,
-                intensity=intens,
-                mdd=shape * m,
-                paa=np.ones_like(intens),
-                intensity_unit="K",
-                name=f"wildfire_{fid}",
+            ImpactFunc.from_sigmoid_impf(
+                intensity=(295.0, 500.0, 5.0), L=m, k=0.035, x0=325.0, haz_type=htype, impf_id=fid
             )
             for m, fid in id_by.items()
         ]
@@ -512,7 +507,11 @@ def _run_european_windstorm(
     fut = fut_infos[0]
     gcm = fut.properties.get("gcm")
 
-    impf_set = ImpactFuncSet([ImpfStormEurope.from_schwierz()])  # haz_type WS, id 1 (calibrated)
+    # Calibrated EU windstorm damage function: Schwierz et al. (default) or Welker et al.,
+    # both published/calibrated for WISC-style winter storms (haz_type WS, m/s, id 1).
+    which = str((options or {}).get("windstorm_impf", "schwierz")).lower()
+    impf = ImpfStormEurope.from_welker() if which == "welker" else ImpfStormEurope.from_schwierz()
+    impf_set = ImpactFuncSet([impf])
     exp, src_idx = _build_exposures(assets, "impf_WS", [1] * len(assets))
     future = _impact(
         exp, impf_set, resilient_get_hazard(client, "storm_europe", properties=fut.properties)
@@ -559,7 +558,7 @@ def _run_european_windstorm(
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
         },
-        "detail": f"Europe storm_europe CMIP6 {gcm} {ssp} (Schwierz impf; SSP future vs present)",
+        "detail": f"Europe storm_europe CMIP6 {gcm} {ssp} ({which} impf; SSP future vs present)",
     }
 
 

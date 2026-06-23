@@ -68,6 +68,23 @@ export function ScenariosView({
             </select>
           </div>
         )}
+        {run_config.perils.includes("european_windstorm") && (
+          <div className="field">
+            <label>EU windstorm damage function</label>
+            <select
+              value={(run_config.options?.windstorm_impf as string) ?? "schwierz"}
+              onChange={(e) => {
+                const opts = { ...run_config.options };
+                if (e.target.value === "welker") opts.windstorm_impf = "welker";
+                else delete opts.windstorm_impf;
+                setRun({ options: opts });
+              }}
+            >
+              <option value="schwierz">Schwierz et al. (default, calibrated)</option>
+              <option value="welker">Welker et al. (calibrated)</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="card">
