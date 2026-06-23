@@ -6,12 +6,15 @@ Run with: ``uv run uvicorn climaterisk.api.main:app --reload``
 
 from __future__ import annotations
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from climaterisk import __version__
 from climaterisk.api.routers import data, libraries, report, run, session, transition
 from climaterisk.config import get_settings
 from climaterisk.logger import get_logger
+from climaterisk.runs.manager import WorkerCapacityError
 
 logger = get_logger(__name__)
 
@@ -19,7 +22,14 @@ logger = get_logger(__name__)
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
     settings = get_settings()
-    app = FastAPI(title="climaterisk", version="0.1.0")
+    app = FastAPI(title="climaterisk", version=__version__)
+
+    @app.exception_handler(WorkerCapacityError)
+    async def _worker_busy(_request: Request, exc: WorkerCapacityError) -> JSONResponse:
+        """Return 503 (retryable) when all worker slots are busy, not an opaque 500."""
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": str(exc)}
+        )
 
     # The Vite dev server proxies /api, but allow direct localhost calls too.
     app.add_middleware(

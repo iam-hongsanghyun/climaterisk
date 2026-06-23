@@ -107,8 +107,13 @@ def compute_cost_benefit(request: dict[str, Any]) -> dict[str, Any]:
     measure_set = MeasureSet(measure_list=[_build_measure(m) for m in measures])
     # Year-varying discount rates: a {year: rate} schedule (linearly interpolated over the
     # horizon) if supplied, else the flat discount_rate. CLIMADA DiscRates entity component.
-    years = np.arange(2000, 2101)
+    # Horizon spans the analysis/schedule years inside a 2000–2100 default envelope, so NPV
+    # stays well-defined for near-term anchors and is not silently truncated for far ones.
     schedule = request.get("discount_schedule") or {}
+    sched_years = [int(y) for y in schedule]
+    horizon_start = min([2000, *anchor_years, *sched_years])
+    horizon_end = max([2100, *anchor_years, *sched_years])
+    years = np.arange(horizon_start, horizon_end + 1)
     if schedule:
         pts = sorted((int(y), float(r)) for y, r in schedule.items())
         rates = np.interp(years, [y for y, _ in pts], [r for _, r in pts])

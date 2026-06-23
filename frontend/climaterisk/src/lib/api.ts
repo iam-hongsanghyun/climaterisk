@@ -3,6 +3,7 @@
 
 import type {
   HazardCatalog,
+  IngestSource,
   Libraries,
   MeasureSpec,
   OpenDataFetchResult,
@@ -110,7 +111,7 @@ export async function submitForecast(sessionId: string): Promise<Run> {
 }
 
 export interface IngestBody {
-  source: "dataapi" | "aqueduct";
+  source: IngestSource;
   peril?: string;
   scenario?: string;
   year?: number;

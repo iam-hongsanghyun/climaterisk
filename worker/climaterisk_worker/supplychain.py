@@ -11,6 +11,7 @@ degrades with a clear, actionable error rather than failing opaquely. Runs in th
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 
@@ -124,7 +125,9 @@ def compute_supplychain(request: dict[str, Any]) -> dict[str, Any]:
         for key, val in list(s.items())[:10]:
             sector = key[-1] if isinstance(key, tuple) else str(key)
             by_sector.append({"sector": str(sector), "indirect": float(val)})
-    except Exception:
+    except Exception as exc:
+        # Don't silently report a fake zero: surface that the breakdown failed.
+        print(f"WARNING supplychain: indirect-impact summary failed: {exc!r}", file=sys.stderr)
         total_indirect = 0.0
 
     return {

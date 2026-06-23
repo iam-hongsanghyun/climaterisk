@@ -34,6 +34,10 @@ from climaterisk.runs.store import Run, RunStore
 logger = get_logger(__name__)
 
 
+class WorkerCapacityError(RuntimeError):
+    """Raised when all worker slots (``max_workers``) are busy; surfaced as HTTP 503."""
+
+
 class RunManager:
     """Orchestrate physical-risk and cost-benefit runs against the external CLIMADA worker."""
 
@@ -43,8 +47,22 @@ class RunManager:
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
         self._started: dict[str, float] = {}  # run_id -> monotonic spawn time
 
+    def _active_count(self) -> int:
+        """Number of worker subprocesses still running (poll() is None)."""
+        return sum(1 for p in self._procs.values() if p.poll() is None)
+
     def _spawn(self, run_id: str, run_dir: Path, request_json: str) -> None:
-        """Write the request and spawn the worker subprocess (non-blocking)."""
+        """Write the request and spawn the worker subprocess (non-blocking).
+
+        Raises:
+            WorkerCapacityError: if ``max_workers`` runs are already in flight.
+        """
+        active = self._active_count()
+        if active >= self._settings.max_workers:
+            raise WorkerCapacityError(
+                f"all {self._settings.max_workers} worker slots are busy "
+                f"({active} running) — wait for a run to finish, then retry."
+            )
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "request.json").write_text(request_json, encoding="utf-8")
         python = self._settings.resolve_worker_python()
@@ -60,11 +78,17 @@ class RunManager:
             env["CLIMATERISK_DEM_PATH"] = str(self._settings.dem_path)
         if self._settings.emdat_path:
             env["CLIMATERISK_EMDAT_PATH"] = str(self._settings.emdat_path)
-        log = (run_dir / "worker.log").open("wb")
         logger.info("run %s: spawning worker (%s)", run_id, python)
-        proc = subprocess.Popen(
-            cmd, cwd=str(self._settings.worker_dir), stdout=log, stderr=subprocess.STDOUT, env=env
-        )
+        # The child inherits the log fd; close our copy after spawn so we don't leak
+        # one descriptor per run on a long-lived server.
+        with (run_dir / "worker.log").open("wb") as log:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(self._settings.worker_dir),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
         self._procs[run_id] = proc
         self._started[run_id] = time.monotonic()
         self._store.update(run_id, "running")

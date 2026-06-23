@@ -67,8 +67,9 @@ def resolve_url(source: dict[str, Any], country: str | None) -> str:
 def _download(url: str, dest_dir: Path, unzip: bool) -> dict[str, Any]:
     filename = url.rsplit("/", 1)[-1].split("?")[0] or "download.dat"
     out = dest_dir / Path(filename).name  # sanitize: basename only
+    timeout = get_settings().download_timeout_seconds
     req = urllib.request.Request(url, headers={"User-Agent": "climaterisk/0.1"})
-    with urllib.request.urlopen(req, timeout=180) as resp, out.open("wb") as fh:
+    with urllib.request.urlopen(req, timeout=timeout) as resp, out.open("wb") as fh:
         shutil.copyfileobj(resp, fh, length=256 * 1024)
     size = out.stat().st_size
     extracted: list[str] = []

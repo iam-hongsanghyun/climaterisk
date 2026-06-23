@@ -56,20 +56,30 @@ def compute_calibration(request: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        # Observed annual losses from EM-DAT for this country / peril.
+        import datetime
+
+        # Observed losses from EM-DAT for this country / peril (total over the record).
         obs = emdat_to_impact(emdat, "TC", countries=[iso3])
-        observed = float(np.nansum(getattr(obs[0], "at_event", []))) if obs else 0.0
+        imp_emdat = obs[0] if obs else None
+        at_event = np.asarray(getattr(imp_emdat, "at_event", []), dtype=float)
+        observed = float(np.nansum(at_event)) if at_event.size else 0.0
         if observed <= 0:
             return {
                 "status": "error",
                 "detail": f"no EM-DAT tropical-cyclone losses found for {iso3}.",
             }
 
+        # Annualise over the calendar-year span the EM-DAT record covers — NOT the
+        # event count (the present-day hazard set holds thousands of synthetic events,
+        # so dividing by it would yield a per-event, not per-year, loss).
+        dates = np.asarray(getattr(imp_emdat, "date", []), dtype=float)
+        event_years = [datetime.date.fromordinal(int(d)).year for d in dates if d > 0]
+        n_years = max(1, max(event_years) - min(event_years) + 1) if event_years else 1
+
         # Present-day hazard + exposure; fit v_half so modelled AAI matches observed.
         impf_ids = [1] * len(assets)
         exp, _ = _build_exposures(assets, "impf_TC", impf_ids)
         haz = _tc_hazard(iso3, "None", None)
-        n_years = max(1, int(getattr(haz, "size", 1)))
 
         def modelled_aai(v_half: float) -> float:
             impf_set = ImpactFuncSet([ImpfTropCyclone.from_emanuel_usa(impf_id=1, v_half=v_half)])

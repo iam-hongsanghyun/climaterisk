@@ -21,12 +21,19 @@ from functools import partial
 from typing import Any
 
 from climaterisk_worker import catalog
+from climaterisk_worker._params import (
+    RF_SCENARIO_MAP as _RF_SCENARIO_MAP,
+)
+from climaterisk_worker._params import (
+    RF_YEAR_RANGES as _RF_YEAR_RANGES,
+)
+from climaterisk_worker._params import (
+    TC_REF_YEARS as _TC_REF_YEARS,
+)
+from climaterisk_worker._params import (
+    nearest as _nearest,
+)
 
-_TC_REF_YEARS = (2040, 2060, 2080)
-# River-flood future window midpoints available from the Data API.
-_RF_YEAR_RANGES = ("2010_2030", "2030_2050", "2050_2070", "2070_2090")
-# RF publishes rcp26/60/85 only; map the platform's climate scenario to the nearest.
-_RF_SCENARIO_MAP = {"rcp26": "rcp26", "rcp45": "rcp60", "rcp60": "rcp60", "rcp85": "rcp85"}
 _RETURN_PERIODS = [10, 25, 50, 100, 250]
 
 
@@ -37,10 +44,6 @@ def climada_available() -> bool:
     except ImportError:
         return False
     return True
-
-
-def _nearest(options: tuple[int, ...], target: int) -> int:
-    return min(options, key=lambda y: (abs(y - target), y))
 
 
 def _per_asset_iso3(lats: list[float], lons: list[float]) -> list[str | None]:

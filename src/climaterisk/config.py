@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Injected into the worker env as CLIMATERISK_EMDAT_PATH when set.
     emdat_path: str | None = None
 
+    # Open-data fetcher (Data tab → "Download here"): per-request HTTP read timeout.
+    download_timeout_seconds: int = Field(default=180, ge=10)
+
     # Logging
     log_level: str = "INFO"
 

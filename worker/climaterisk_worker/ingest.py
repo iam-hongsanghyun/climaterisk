@@ -25,6 +25,18 @@ from __future__ import annotations
 from typing import Any, NamedTuple
 
 from climaterisk_worker import catalog
+from climaterisk_worker._params import (
+    RF_SCENARIO_MAP as _RF_SCENARIO_MAP,
+)
+from climaterisk_worker._params import (
+    RF_YEAR_RANGES as _RF_YEAR_RANGES,
+)
+from climaterisk_worker._params import (
+    TC_REF_YEARS as _TC_REF_YEARS,
+)
+from climaterisk_worker._params import (
+    nearest as _nearest,
+)
 
 # --- Aqueduct Floods v2 (WRI, CC-BY 4.0) ---------------------------------------
 _AQ_BASE = "http://wri-projects.s3.amazonaws.com/AqueductFloodTool/download/v2"
@@ -40,14 +52,16 @@ _AQ_COAST_RPS = (2, 5, 10, 25, 50, 100, 250, 500, 1000)
 _AQ_COAST_SUBSIDENCE = "wtsub"  # with subsidence (more conservative than nosub)
 _AQ_COAST_SLR = "0"  # sea-level-rise scenario token (0 = 50th-percentile central estimate)
 
-# --- CLIMADA Data API future windows -------------------------------------------
-_TC_REF_YEARS = (2040, 2060, 2080)
-_RF_YEAR_RANGES = ("2010_2030", "2030_2050", "2050_2070", "2070_2090")
-_RF_SCENARIO_MAP = {"rcp26": "rcp26", "rcp45": "rcp60", "rcp60": "rcp60", "rcp85": "rcp85"}
+# DEM mosaic decimation cap: 30 m GLO-30 over a portfolio bbox is millions of cells,
+# which makes the bathtub-surge model run out of memory. Cap the larger dimension to
+# this many pixels (the resolution at which surge ran comfortably).
+_DEM_MAX_PIXELS = 250
+# IBTrACS observed-track window for synthetic TC generation — a recent-climatology
+# decade. Override per-run via request["ibtracs_year_range"] = [start, end].
+_IBTRACS_YEAR_RANGE = (2010, 2021)
 
-
-def _nearest(options: tuple[int, ...], target: int) -> int:
-    return min(options, key=lambda y: (abs(y - target), y))
+# CLIMADA Data API future windows (_TC_REF_YEARS / _RF_*) and _nearest are shared
+# with physical.py via climaterisk_worker._params (single source of truth).
 
 
 def _region_for_points(points: list[list[float]]) -> str:
@@ -404,7 +418,7 @@ def ingest_copernicus_dem(request: dict[str, Any]) -> dict[str, Any]:
     from rasterio import Affine
 
     max_dim = max(int(mosaic.shape[-2]), int(mosaic.shape[-1]))
-    stride = max(1, max_dim // 250)
+    stride = max(1, max_dim // _DEM_MAX_PIXELS)
     if stride > 1:
         mosaic = mosaic[:, ::stride, ::stride]
         transform = transform * Affine.scale(float(stride))
@@ -455,12 +469,13 @@ def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
     region = _region_for_points(points)
     nb_synth = int(request.get("nb_synth_tracks", 2))
     basin = request.get("basin")  # optional 2-letter basin (e.g. "WP", "NA")
+    yr0, yr1 = tuple(request.get("ibtracs_year_range") or _IBTRACS_YEAR_RANGE)
 
     tracks = TCTracks.from_ibtracs_netcdf(
-        year_range=(2010, 2021), basin=basin, estimate_missing=True
+        year_range=(int(yr0), int(yr1)), basin=basin, estimate_missing=True
     )
     if tracks.size == 0:
-        raise ValueError(f"no IBTrACS tracks for basin={basin} 2010–2021")
+        raise ValueError(f"no IBTrACS tracks for basin={basin} {yr0}–{yr1}")
     tracks.equal_timestep()
     if nb_synth > 0:
         tracks.calc_perturbed_trajectories(nb_synth_tracks=nb_synth)

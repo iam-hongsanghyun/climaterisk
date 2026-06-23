@@ -185,7 +185,6 @@ export function ResultsView({
 }) {
   const currency = model.assets[0]?.currency ?? "USD";
   const running = run?.status === "queued" || run?.status === "running";
-  const start = onRun;
 
   const reportParams = new URLSearchParams();
   if (run?.id) reportParams.set("run_id", run.id);
@@ -210,7 +209,7 @@ export function ResultsView({
             </span>
           ))}
         </p>
-        <button className="btn" onClick={start} disabled={busy || running || model.assets.length === 0}>
+        <button className="btn" onClick={onRun} disabled={busy || running || model.assets.length === 0}>
           {running ? "Running CLIMADA…" : busy ? "Submitting…" : "Run analysis"}
         </button>
         <a
