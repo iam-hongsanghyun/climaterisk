@@ -36,8 +36,9 @@ class AssetSpec(BaseModel):
     vulnerability_class: str
     tc_v_half: float  # Emanuel TC: wind speed (m/s) at 50% mean damage
     wf_max_mdd: float  # wildfire: max mean damage ratio above the fire-intensity threshold
-    flood_depth_m: list[float]  # river-flood depth-damage: depths (m)
-    flood_mdr: list[float]  # river-flood depth-damage: mean damage ratio at each depth
+    flood_depth_m: list[float]  # flood depth-damage: depths (m), shared by river + coastal flood
+    flood_mdr: list[float]  # flood depth-damage: mean damage ratio at each depth
+    geometry: dict[str, Any] | None = None  # GeoJSON footprint; runners disaggregate to points
 
 
 def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
@@ -73,6 +74,7 @@ def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
                 wf_max_mdd=wf,
                 flood_depth_m=flood_depth_m,
                 flood_mdr=fmdr,
+                geometry=a.geometry,
             )
         )
     return specs
@@ -128,6 +130,10 @@ class PhysicalRunResult(BaseModel):
     total_value: float = 0.0
     per_asset: list[AssetImpact] = Field(default_factory=list)
     freq_curve: FreqCurve | None = None
+    # "monetary" (AAI in currency) | "yield" | "productivity" — non-damage perils
+    # (heatwave, drought, crop yield) report a fractional/index metric, not currency.
+    result_kind: str = "monetary"
+    metric_unit: str | None = None  # label for non-monetary metrics (e.g. "% yield loss")
     detail: str | None = None
 
 

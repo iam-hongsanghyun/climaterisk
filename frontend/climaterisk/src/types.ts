@@ -3,6 +3,8 @@
 export type DepthLevel = "asset" | "portfolio" | "national";
 export type GeographicScale = "point" | "footprint" | "regional" | "national";
 
+export type ExposureSource = "points" | "litpop" | "osm" | "crop";
+
 export interface Asset {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ export interface Asset {
   currency: string;
   annual_emissions_tco2e: number | null;
   vulnerability_class: string | null;
+  geometry?: Record<string, unknown> | null; // GeoJSON footprint (Polygon/MultiPolygon)
   properties: Record<string, string | number | boolean>;
 }
 
@@ -26,6 +29,7 @@ export interface Scenario {
 export interface RunConfig {
   perils: string[];
   discount_rate: number;
+  exposure_source?: ExposureSource;
   options: Record<string, string | number | boolean>;
 }
 
@@ -155,6 +159,8 @@ export interface PhysicalRunResult {
   total_value: number;
   per_asset: AssetImpact[];
   freq_curve: FreqCurve | null;
+  result_kind?: "monetary" | "yield" | "productivity";
+  metric_unit?: string | null;
   detail: string | null;
 }
 export interface PhysicalRunOutput {

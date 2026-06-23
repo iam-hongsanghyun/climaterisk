@@ -8,12 +8,14 @@ inputs that the physical/transition engines consume originate here.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from climaterisk.core.enums import (
     ClimateScenario,
     DepthLevel,
+    ExposureSource,
     GeographicScale,
     Peril,
     Sector,
@@ -43,6 +45,11 @@ class Asset(BaseModel):
         default=None,
         description="Vulnerability-class id (peril-agnostic); if None, the sector default is used.",
     )
+    geometry: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional GeoJSON geometry (Polygon/MultiPolygon) for footprint-scale "
+        "exposure; when set, runners disaggregate it to points (lines_polys_handler).",
+    )
     properties: dict[str, float | str | bool] = Field(default_factory=dict)
 
 
@@ -59,6 +66,7 @@ class RunConfig(BaseModel):
 
     perils: list[Peril] = Field(default_factory=lambda: [Peril.TROPICAL_CYCLONE])
     discount_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    exposure_source: ExposureSource = ExposureSource.POINTS
     options: dict[str, float | str | bool] = Field(default_factory=dict)
 
 

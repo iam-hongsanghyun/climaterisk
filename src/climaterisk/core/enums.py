@@ -74,6 +74,15 @@ class VulnerabilityClass(StrEnum):
     INFRASTRUCTURE = "infrastructure"
 
 
+class ExposureSource(StrEnum):
+    """How a run's exposure is built (drives which CLIMADA exposure builder is used)."""
+
+    POINTS = "points"  # user-placed map points (default)
+    LITPOP = "litpop"  # modeled LitPop national grid (nightlight × population)
+    OSM = "osm"  # OpenStreetMap / building footprints (climada_petals osm-flex)
+    CROP = "crop"  # crop-production exposure (ISIMIP, for agricultural perils)
+
+
 class Peril(StrEnum):
     """Physical climate hazards. Values align with CLIMADA / climada_petals hazard types."""
 
@@ -86,6 +95,11 @@ class Peril(StrEnum):
     HEATWAVE = "heatwave"
     DROUGHT = "drought"
     HAIL = "hail"
+    TC_RAIN = "tc_rain"
+    TC_SURGE = "tc_surge"
+    LANDSLIDE = "landslide"
+    LOW_FLOW = "low_flow"
+    CROP_YIELD = "crop_yield"
 
 
 class ClimateScenario(StrEnum):
