@@ -58,6 +58,10 @@ def run(run_dir: Path) -> dict[str, Any]:
                 from climaterisk_worker.supplychain import compute_supplychain
 
                 output = compute_supplychain(request)
+            elif mode == "calibration":
+                from climaterisk_worker.calibration import compute_calibration
+
+                output = compute_calibration(request)
             else:
                 output = compute_physical_risk(request)
         except Exception as exc:

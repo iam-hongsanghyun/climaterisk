@@ -74,6 +74,17 @@ def submit_litpop(session_id: str, country: str, store: StoreDep, manager: Manag
     return manager.submit_litpop(portfolio, country.upper())
 
 
+@router.post("/{session_id}/calibration", response_model=Run)
+def submit_calibration(session_id: str, store: StoreDep, manager: ManagerDep) -> Run:
+    """Submit an impact-function calibration run (fit TC v_half to EM-DAT observed losses)."""
+    portfolio = store.get(session_id)
+    if portfolio is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    if not portfolio.assets:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="portfolio has no assets")
+    return manager.submit_calibration(portfolio)
+
+
 @router.post("/{session_id}/supplychain", response_model=Run)
 def submit_supplychain(
     session_id: str,

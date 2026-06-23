@@ -17,6 +17,7 @@ from pathlib import Path
 from climaterisk.config import Settings
 from climaterisk.core.entities import Portfolio
 from climaterisk.engines.base import (
+    CalibrationRequest,
     CostBenefitRequest,
     IngestRequest,
     LitPopRequest,
@@ -54,6 +55,8 @@ class RunManager:
         }
         if self._settings.dem_path:
             env["CLIMATERISK_DEM_PATH"] = str(self._settings.dem_path)
+        if self._settings.emdat_path:
+            env["CLIMATERISK_EMDAT_PATH"] = str(self._settings.emdat_path)
         log = (run_dir / "worker.log").open("wb")
         logger.info("run %s: spawning worker (%s)", run_id, python)
         proc = subprocess.Popen(
@@ -117,6 +120,15 @@ class RunManager:
         run_id = uuid.uuid4().hex
         run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["supplychain"])
         request = SupplyChainRequest.from_portfolio(portfolio, mriot_type, mriot_year)
+        self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
+        run.status = "running"
+        return run
+
+    def submit_calibration(self, portfolio: Portfolio) -> Run:
+        """Create an impact-function calibration run and spawn its worker."""
+        run_id = uuid.uuid4().hex
+        run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["calibration"])
+        request = CalibrationRequest.from_portfolio(portfolio)
         self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
         run.status = "running"
         return run

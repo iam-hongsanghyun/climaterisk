@@ -398,3 +398,39 @@ class SupplyChainResult(BaseModel):
     amplification: float | None = None  # indirect / direct
     by_sector: list[SupplyChainSector] = Field(default_factory=list)
     detail: str | None = None
+
+
+# --- Impact-function calibration (against observed EM-DAT losses) ---
+
+
+class CalibrationRequest(BaseModel):
+    """Inputs for an impact-function calibration run (fit TC v_half to EM-DAT losses)."""
+
+    mode: str = "calibration"
+    session_id: str
+    climate_scenario: str
+    anchor_years: list[int]
+    assets: list[AssetSpec]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio) -> CalibrationRequest:
+        """Build a calibration request from the session model."""
+        return cls(
+            session_id=portfolio.id,
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+            assets=resolve_asset_specs(portfolio),
+        )
+
+
+class CalibrationResult(BaseModel):
+    """Engine output for an impact-function calibration run."""
+
+    status: str
+    peril: str = "tropical_cyclone"
+    country: str = ""
+    param: str = "v_half"
+    initial: float = 0.0
+    calibrated: float = 0.0
+    observed_annual_loss: float = 0.0
+    detail: str | None = None
