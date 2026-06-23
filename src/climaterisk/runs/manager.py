@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class RunManager:
         self._settings = settings
         self._store = store
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
+        self._started: dict[str, float] = {}  # run_id -> monotonic spawn time
 
     def _spawn(self, run_id: str, run_dir: Path, request_json: str) -> None:
         """Write the request and spawn the worker subprocess (non-blocking)."""
@@ -63,6 +65,7 @@ class RunManager:
             cmd, cwd=str(self._settings.worker_dir), stdout=log, stderr=subprocess.STDOUT, env=env
         )
         self._procs[run_id] = proc
+        self._started[run_id] = time.monotonic()
         self._store.update(run_id, "running")
 
     def submit(self, portfolio: Portfolio) -> Run:
@@ -148,8 +151,22 @@ class RunManager:
         if proc is None:  # backend restarted: fall back to the result file
             return self._finalize(run_id, run_dir) if result_path.is_file() else run
         if proc.poll() is None:
+            # Kill runs that exceed the wall-clock cap (intractable jobs).
+            started = self._started.get(run_id)
+            if started is not None and (time.monotonic() - started) > self._settings.max_run_seconds:
+                proc.kill()
+                self._procs.pop(run_id, None)
+                self._started.pop(run_id, None)
+                self._store.update(
+                    run_id,
+                    "error",
+                    detail=f"run exceeded the {self._settings.max_run_seconds}s time limit "
+                    f"and was stopped. {self._log_tail(run_dir)}",
+                )
+                return self._store.get(run_id)
             return run  # still running
         self._procs.pop(run_id, None)
+        self._started.pop(run_id, None)
         return self._finalize(run_id, run_dir)
 
     def _finalize(self, run_id: str, run_dir: Path) -> Run | None:

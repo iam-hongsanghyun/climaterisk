@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Explicit override for the worker interpreter; if unset, derived from worker_env_dir.
     worker_python: str | None = None
     max_workers: int = Field(default=2, ge=1)
+    # Wall-clock cap per worker run; exceeded runs are killed and reported as timed out
+    # (guards against intractable jobs, e.g. a full-MRIO supply-chain solve).
+    max_run_seconds: int = Field(default=900, ge=30)
     # Optional Copernicus DEM GeoTIFF (topography) for TC storm-surge (TCSurgeBathtub).
     # A manual drop-in; injected into the worker env as CLIMATERISK_DEM_PATH when set.
     dem_path: str | None = None
