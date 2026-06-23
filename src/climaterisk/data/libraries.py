@@ -20,6 +20,7 @@ _FILES = {
     "perils": "perils.json",
     "scenarios": "scenarios.json",
     "impact_functions": "impact_functions.json",
+    "impf_presets": "impact_function_presets.json",
     "carbon_prices": "ngfs_carbon_prices.json",
     "data_sources": "data_sources.json",
 }

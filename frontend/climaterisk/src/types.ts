@@ -119,6 +119,15 @@ export interface DataSourcesLib {
   sources: DataSource[];
 }
 
+export interface ImpfPreset {
+  id: string;
+  peril: "tc" | "flood";
+  label: string;
+  tc_v_half?: number;
+  flood_mdr?: number[];
+  provenance: string;
+}
+
 export interface Libraries {
   sectors: { sectors: SectorOption[] };
   perils: { perils: PerilOption[] };
@@ -128,6 +137,7 @@ export interface Libraries {
     anchor_years: number[];
   };
   impact_functions: { classes: VulnerabilityClass[]; flood_depth_m: number[] };
+  impf_presets?: { presets: ImpfPreset[] };
   carbon_prices?: { prices: Record<string, Record<string, number>> };
   data_sources: DataSourcesLib;
 }
