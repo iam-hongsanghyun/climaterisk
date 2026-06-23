@@ -1,4 +1,84 @@
+import { useState } from "react";
 import type { Asset, Libraries } from "../types";
+
+/** Footprint (polygon) authoring for footprint-scale assets — drawn footprints are
+ *  disaggregated to grid points by the worker (value split evenly). Keeps a local text
+ *  buffer so invalid-while-typing JSON doesn't fight the controlled field. */
+function FootprintField({
+  asset,
+  onChange,
+}: {
+  asset: Asset;
+  onChange: (patch: Partial<Asset>) => void;
+}) {
+  const [text, setText] = useState(asset.geometry ? JSON.stringify(asset.geometry) : "");
+  const [err, setErr] = useState<string | null>(null);
+
+  const setText2 = (t: string) => {
+    setText(t);
+    if (t.trim() === "") {
+      setErr(null);
+      onChange({ geometry: null });
+      return;
+    }
+    try {
+      setErr(null);
+      onChange({ geometry: JSON.parse(t) });
+    } catch {
+      setErr("invalid GeoJSON");
+    }
+  };
+
+  const boxAround = () => {
+    const h = 0.05;
+    const lo = asset.lon;
+    const la = asset.lat;
+    const geom = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [lo - h, la - h],
+          [lo + h, la - h],
+          [lo + h, la + h],
+          [lo - h, la + h],
+          [lo - h, la - h],
+        ],
+      ],
+    };
+    setText(JSON.stringify(geom));
+    setErr(null);
+    onChange({ geometry: geom });
+  };
+
+  return (
+    <div className="field">
+      <label>Footprint geometry (GeoJSON polygon)</label>
+      <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+        <button className="btn secondary" style={{ padding: "4px 8px" }} onClick={boxAround}>
+          ▢ Box around location
+        </button>
+        {text && (
+          <button
+            className="btn secondary"
+            style={{ padding: "4px 8px" }}
+            onClick={() => setText2("")}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <textarea
+        rows={4}
+        style={{ width: "100%", fontFamily: "monospace", fontSize: 11 }}
+        value={text}
+        placeholder='{"type":"Polygon","coordinates":[[[lon,lat],…]]}'
+        onChange={(e) => setText2(e.target.value)}
+      />
+      {err && <p className="hint" style={{ color: "var(--danger)" }}>{err}</p>}
+      <p className="hint">Disaggregated to interior grid points; asset value is split across them.</p>
+    </div>
+  );
+}
 
 export function AssetEditor({
   asset,
@@ -58,6 +138,10 @@ export function AssetEditor({
           <option value="national">National</option>
         </select>
       </div>
+
+      {asset.geographic_scale === "footprint" && (
+        <FootprintField asset={asset} onChange={onChange} />
+      )}
 
       <div className="row2">
         <div className="field">
