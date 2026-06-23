@@ -51,6 +51,8 @@ class RunManager:
             "MPLBACKEND": "Agg",
             "CLIMATERISK_HAZARD_DB": str(self._settings.hazard_db_path),
         }
+        if self._settings.dem_path:
+            env["CLIMATERISK_DEM_PATH"] = str(self._settings.dem_path)
         log = (run_dir / "worker.log").open("wb")
         logger.info("run %s: spawning worker (%s)", run_id, python)
         proc = subprocess.Popen(
