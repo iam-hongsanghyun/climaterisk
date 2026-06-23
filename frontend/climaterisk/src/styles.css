@@ -7,14 +7,34 @@
   --muted: #8b98a5;
   --accent: #2f9e8f;
   --accent-2: #3aa0ff;
+  --warn: #e0a32e;
   --danger: #e5534b;
   --radius: 8px;
+  /* Semantic peril/series colors — single source for charts (see BarsChart etc.) */
+  --color-tc: #3aa0ff;
+  --color-flood: #2f9e8f;
+  --color-carbon: #e0a32e;
+  --color-wildfire: #e5534b;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-2);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* Accessible focus rings (keyboard only) on all interactive controls */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 4px; }
+::selection { background: rgba(58, 160, 255, 0.3); }
+
+/* Slim, theme-matched scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; border: 2px solid var(--bg); }
+*::-webkit-scrollbar-thumb:hover { background: #3c4a55; }
 
 .app { display: flex; height: 100vh; overflow: hidden; }
 
@@ -31,10 +51,11 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
   background: none; border: none; color: var(--muted); cursor: pointer;
   padding: 12px 4px; font-size: 11px; display: flex; flex-direction: column;
   align-items: center; gap: 4px; border-left: 3px solid transparent;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 .activitybar button .ico { font-size: 18px; }
 .activitybar button:hover { color: var(--text); background: var(--panel-2); }
-.activitybar button.active { color: var(--text); border-left-color: var(--accent); }
+.activitybar button.active { color: var(--text); border-left-color: var(--accent); background: var(--panel-2); }
 
 /* Workspace */
 .workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -68,6 +89,7 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .assetlist .row {
   display: flex; justify-content: space-between; align-items: center;
   padding: 7px 9px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+  transition: background 0.1s ease, border-color 0.1s ease;
 }
 .assetlist .row:hover { background: var(--panel-2); }
 .assetlist .row.sel { background: var(--panel-2); border-color: var(--accent); }
@@ -84,28 +106,41 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
+/* Standalone inline input/select (outside a .field column) */
+.field-inline {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  padding: 7px 9px; border-radius: 6px; font-size: 13px;
+}
+
 .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
 
 button.btn {
   background: var(--accent); color: #06231f; border: none; padding: 9px 12px;
   border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px;
+  transition: filter 0.12s ease, opacity 0.12s ease;
 }
-button.btn:hover { filter: brightness(1.08); }
+button.btn:hover:not(:disabled) { filter: brightness(1.08); }
+button.btn:active:not(:disabled) { filter: brightness(0.95); }
 button.btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 button.btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Inputs/selects share one focus treatment everywhere */
+input:focus-visible, select:focus-visible, textarea:focus-visible { box-shadow: var(--focus-ring); }
+
 /* Generic panel view (scenarios, results) */
 .panelview { padding: 24px; overflow-y: auto; height: 100%; max-width: 720px; }
-.panelview h2 { margin-top: 0; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+.panelview h2 { margin: 0 0 16px; font-size: 19px; font-weight: 600; letter-spacing: -0.2px; }
+.panelview h3 { margin: 14px 0 6px; font-size: 14px; font-weight: 600; color: var(--text); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow-card); }
+.card.nested { background: var(--panel-2); box-shadow: none; padding: 12px 14px; margin-bottom: 8px; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
 .checkrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .checkrow.disabled { opacity: 0.45; }
 .empty { color: var(--muted); text-align: center; padding: 40px; }
 
 /* KPI cards */
-.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
 .kpi { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .kpi-value { font-size: 20px; font-weight: 700; color: var(--text); }
 .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
@@ -133,3 +168,57 @@ button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .bar-cell { position: relative; min-width: 120px; height: 18px; display: flex; align-items: center; }
 .bar-cell .bar { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 3px; opacity: 0.35; }
 .bar-cell .bar-label { position: relative; z-index: 1; padding-left: 4px; }
+
+/* ---- Shared UI primitives (professional polish) ---------------------------- */
+
+/* Loading spinner — pair with running/submitting button + status text */
+@keyframes cr-spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block; width: 12px; height: 12px; vertical-align: -1px;
+  border: 2px solid var(--border); border-top-color: var(--accent-2);
+  border-radius: 50%; animation: cr-spin 0.7s linear infinite;
+}
+
+/* Status messages + boxes — one consistent treatment for feedback */
+.status-msg { font-size: 12px; line-height: 1.5; }
+.status-msg.is-error { color: var(--danger); }
+.status-msg.is-success { color: var(--accent); }
+.status-msg.is-muted { color: var(--muted); }
+.status-box {
+  padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.6;
+  border: 1px solid var(--border); border-left-width: 3px; color: var(--text);
+  word-break: break-word; overflow-wrap: anywhere;
+}
+.status-box.error { background: rgba(229, 83, 75, 0.08); border-left-color: var(--danger); }
+.status-box.info { background: rgba(58, 160, 255, 0.06); border-left-color: var(--accent-2); }
+.status-box.success { background: rgba(47, 158, 143, 0.08); border-left-color: var(--accent); }
+.status-box.running { background: rgba(58, 160, 255, 0.06); border-left-color: var(--accent-2); display: flex; align-items: center; gap: 8px; }
+
+/* Empty state — consistent guidance instead of bare text */
+.empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.8; }
+.empty-state .empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.empty-state .empty-hint { font-size: 12px; line-height: 1.5; max-width: 360px; margin: 0 auto; }
+
+/* Inline control groups (replaces inline-style sprawl in Map/Data views) */
+.control-group {
+  margin-top: 8px; padding: 8px 10px; background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.control-group label.hint { display: inline-flex; align-items: center; gap: 4px; }
+.form-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.section-divider { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; }
+
+/* Tables that can outgrow their card scroll horizontally instead of breaking layout */
+.table-wrap { width: 100%; overflow-x: auto; }
+
+/* Saving indicator pulse */
+@keyframes cr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.topbar .sync.saving { animation: cr-pulse 1.4s ease-in-out infinite; }
+
+/* Responsive: stack the map/side panel on narrow viewports */
+@media (max-width: 820px) {
+  .mapview { flex-direction: column; }
+  .sidepanel { width: 100%; border-left: none; border-top: 1px solid var(--border); max-height: 46vh; }
+  .panelview { padding: 16px; }
+}

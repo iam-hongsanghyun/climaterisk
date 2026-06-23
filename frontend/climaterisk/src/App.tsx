@@ -68,7 +68,15 @@ export function App() {
   const results = useResults(model?.id ?? "");
 
   if (!model || !libraries) {
-    return <div className="empty">Loading climaterisk…</div>;
+    return (
+      <div className="empty-state" style={{ paddingTop: "20vh" }}>
+        <div className="empty-icon">
+          <span className="spinner" style={{ width: 28, height: 28, borderWidth: 3 }} />
+        </div>
+        <div className="empty-title">Loading climaterisk…</div>
+        <div className="empty-hint">Restoring your portfolio and methodology libraries.</div>
+      </div>
+    );
   }
 
   return (

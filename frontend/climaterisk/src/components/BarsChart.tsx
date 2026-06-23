@@ -4,7 +4,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
  *  sectors, and similar "name → value" breakdowns. */
 export function BarsChart({
   data,
-  color = "#4ea1d3",
+  color = "var(--accent-2)",
   height,
   fmt,
 }: {

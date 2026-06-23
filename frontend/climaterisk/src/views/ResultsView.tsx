@@ -238,17 +238,26 @@ export function ResultsView({
           </>
         )}
         {running && (
-          <p className="hint" style={{ marginTop: 10 }}>
-            ⏳ Physical run: {run?.status}. The first run downloads hazard data and can take a minute.
-          </p>
+          <div className="status-box running" style={{ marginTop: 10 }}>
+            <span className="spinner" />
+            <span>
+              Physical run: {run?.status}. The first run downloads hazard data and can take a minute.
+            </span>
+          </div>
         )}
-        {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
+        {error && (
+          <div className="status-box error" style={{ marginTop: 10 }}>
+            {error}
+          </div>
+        )}
       </div>
 
       {run?.status === "error" && (
         <div className="card">
           <div className="section-title">Physical run failed</div>
-          <pre style={{ whiteSpace: "pre-wrap", color: "var(--danger)", fontSize: 12 }}>{run.detail}</pre>
+          <pre className="status-box error" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>
+            {run.detail}
+          </pre>
         </div>
       )}
 

@@ -113,7 +113,14 @@ export function MapView({
               scale, value, and emissions.
             </p>
             {model.assets.length === 0 ? (
-              <p className="hint">No facilities yet.</p>
+              <div className="empty-state" style={{ padding: "24px 12px" }}>
+                <div className="empty-icon">📍</div>
+                <div className="empty-title">No facilities yet</div>
+                <div className="empty-hint">
+                  Click anywhere on the map to place your first facility — or model a whole
+                  country's exposure below.
+                </div>
+              </div>
             ) : (
               <div className="assetlist">
                 {model.assets.map((a) => (
@@ -129,24 +136,18 @@ export function MapView({
               </div>
             )}
 
-            <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12 }}>
+            <div className="section-divider">
               <div className="section-title">Modeled exposure</div>
               <p className="hint">
                 Model a whole country's asset values instead of hand-entering assets, then run TC
                 impact. LitPop (population × nightlights) is built in; other sources are login-gated
                 or large and report what to download if absent.
               </p>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className="form-row" style={{ marginTop: 8 }}>
                 <select
+                  className="field-inline"
                   value={litpopSource}
                   onChange={(e) => setLitpopSource(e.target.value)}
-                  style={{
-                    background: "var(--panel-2)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text)",
-                    borderRadius: 6,
-                    padding: "7px 9px",
-                  }}
                   title="Modeled-exposure data source"
                 >
                   <option value="litpop">LitPop (nightlight × pop)</option>
@@ -156,36 +157,37 @@ export function MapView({
                   <option value="osm">OSM buildings (osm-flex)</option>
                 </select>
                 <input
+                  className="field-inline"
                   value={litpopCountry}
                   onChange={(e) => setLitpopCountry(e.target.value.toUpperCase())}
                   maxLength={3}
                   placeholder="ISO3"
-                  style={{
-                    width: 70,
-                    background: "var(--panel-2)",
-                    border: "1px solid var(--border)",
-                    color: "var(--text)",
-                    borderRadius: 6,
-                    padding: "7px 9px",
-                  }}
+                  style={{ width: 70 }}
                 />
                 <button
                   className="btn"
                   onClick={() => onRunLitpop(litpopCountry, litpopSource)}
                   disabled={litpopBusy || litpopRunning || litpopCountry.length !== 3}
+                  title={litpopCountry.length !== 3 ? "Enter a 3-letter ISO country code" : ""}
                 >
-                  {litpopRunning ? "Modeling…" : "Model exposure"}
+                  {litpopRunning ? (
+                    <>
+                      <span className="spinner" /> Modeling…
+                    </>
+                  ) : (
+                    "Model exposure"
+                  )}
                 </button>
               </div>
-              {litpopErr && <p className="hint" style={{ color: "var(--danger)" }}>{litpopErr}</p>}
+              {litpopErr && <div className="status-box error" style={{ marginTop: 8 }}>{litpopErr}</div>}
               {litpopRun?.status === "error" && (
-                <p className="hint" style={{ color: "var(--danger)" }}>{litpopRun.detail}</p>
+                <div className="status-box error" style={{ marginTop: 8 }}>{litpopRun.detail}</div>
               )}
               {litpop && litpop.status === "error" && (
-                <p className="hint" style={{ color: "var(--danger)" }}>{litpop.detail}</p>
+                <div className="status-box error" style={{ marginTop: 8 }}>{litpop.detail}</div>
               )}
               {litpop && litpop.status === "ok" && (
-                <p className="hint">
+                <p className="hint" style={{ marginTop: 8 }}>
                   {litpop.source_label ?? "LitPop"} · {litpop.country}:{" "}
                   {litpop.n_points.toLocaleString()} cells · exposed{" "}
                   {money(litpop.total_value, litpop.currency)} · AAI{" "}

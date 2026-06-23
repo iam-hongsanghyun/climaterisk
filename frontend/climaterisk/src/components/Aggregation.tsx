@@ -49,7 +49,7 @@ function GroupTable({
               </td>
               <td>
                 <div className="bar-cell">
-                  <span className="bar" style={{ width: `${(r.trans / maxTrans) * 100}%`, background: "#e0a32e" }} />
+                  <span className="bar" style={{ width: `${(r.trans / maxTrans) * 100}%`, background: "var(--color-carbon)" }} />
                   <span className="bar-label">{money(r.trans, currency)}</span>
                 </div>
               </td>

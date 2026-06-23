@@ -53,7 +53,7 @@ export function TransitionChart({
       <text x={m.l + iw / 2} y={H - 2} textAnchor="middle" fontSize="10" fill="var(--muted)">
         year · annual carbon cost
       </text>
-      <polyline points={points} fill="none" stroke="#e0a32e" strokeWidth={2} />
+      <polyline points={points} fill="none" stroke="var(--color-carbon)" strokeWidth={2} />
     </svg>
   );
 }

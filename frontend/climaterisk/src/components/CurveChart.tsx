@@ -4,7 +4,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 export function CurveChart({
   data,
   xLabel,
-  color = "#4ea1d3",
+  color = "var(--accent-2)",
   height = 150,
 }: {
   data: { x: number; y: number }[];
