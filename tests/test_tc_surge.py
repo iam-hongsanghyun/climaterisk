@@ -36,7 +36,10 @@ def test_tc_surge_registered() -> None:
     assert "tc_surge" in physical._RUNNERS
 
 
-def test_tc_surge_requires_dem(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tc_surge_requires_dem(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # No explicit DEM, and an empty catalog so the catalog-DEM fallback finds nothing →
+    # the runner raises before importing CLIMADA (so this is offline-testable).
     monkeypatch.delenv("CLIMATERISK_DEM_PATH", raising=False)
+    monkeypatch.setenv("CLIMATERISK_HAZARD_DB", str(tmp_path))
     with pytest.raises(ValueError, match="DEM"):
         physical._run_tc_surge([_ASSET], "rcp45", [2040])
