@@ -21,6 +21,7 @@ from functools import partial
 from typing import Any
 
 from climaterisk_worker import catalog
+from climaterisk_worker._dataapi import resilient_get_hazard
 from climaterisk_worker._params import (
     RF_SCENARIO_MAP as _RF_SCENARIO_MAP,
 )
@@ -184,14 +185,15 @@ def _run_tropical_cyclone(
             props["ref_year"] = str(year)
         if iso3 is not None:
             try:
-                return client.get_hazard(
+                return resilient_get_hazard(
+                    client,
                     "tropical_cyclone",
                     properties={**props, "spatial_coverage": "country", "country_iso3alpha": iso3},
                 )
             except Exception:
                 pass
-        return client.get_hazard(
-            "tropical_cyclone", properties={**props, "spatial_coverage": "global"}
+        return resilient_get_hazard(
+            client, "tropical_cyclone", properties={**props, "spatial_coverage": "global"}
         )
 
     # Future-hazard resolution: local catalog first; then either the Data API's future
@@ -286,13 +288,16 @@ def _run_river_flood(
         props = {"climate_scenario": scen, "year_range": yr}
         if iso3 is not None:
             try:
-                return client.get_hazard(
+                return resilient_get_hazard(
+                    client,
                     "river_flood",
                     properties={**props, "spatial_coverage": "country", "country_iso3alpha": iso3},
                 )
             except Exception:
                 pass
-        return client.get_hazard("river_flood", properties={**props, "spatial_coverage": "global"})
+        return resilient_get_hazard(
+            client, "river_flood", properties={**props, "spatial_coverage": "global"}
+        )
 
     cat_haz = catalog.load_hazard("river_flood", climate_scenario, iso3 or "global", target)
     future = _impact(exp, impf_set, cat_haz or fetch(scenario, year_range))
@@ -341,8 +346,8 @@ def _run_wildfire(
         raise ValueError("wildfire requires a single-country portfolio (global set too large)")
 
     cat_haz = catalog.load_hazard("wildfire", "historical", iso3, 2020)
-    haz = cat_haz or Client().get_hazard(
-        "wildfire", properties={"spatial_coverage": "country", "country_iso3alpha": iso3}
+    haz = cat_haz or resilient_get_hazard(
+        Client(), "wildfire", properties={"spatial_coverage": "country", "country_iso3alpha": iso3}
     )
     wf_src = "local catalog" if cat_haz is not None else "Data API"
     htype = haz.haz_type  # "WFseason"; intensity is brightness temperature (K)
@@ -420,7 +425,9 @@ def _run_european_windstorm(
 
     impf_set = ImpactFuncSet([ImpfStormEurope.from_schwierz()])  # haz_type WS, id 1 (calibrated)
     exp, src_idx = _build_exposures(assets, "impf_WS", [1] * len(assets))
-    future = _impact(exp, impf_set, client.get_hazard("storm_europe", properties=fut.properties))
+    future = _impact(
+        exp, impf_set, resilient_get_hazard(client, "storm_europe", properties=fut.properties)
+    )
 
     present_aai: float | None = None
     pre_infos = client.list_dataset_infos(
@@ -428,7 +435,9 @@ def _run_european_windstorm(
     )
     if pre_infos:
         try:
-            present = client.get_hazard("storm_europe", properties=pre_infos[0].properties)
+            present = resilient_get_hazard(
+                client, "storm_europe", properties=pre_infos[0].properties
+            )
             present_aai = float(_impact(exp, impf_set, present).aai_agg)
         except Exception:
             present_aai = None
@@ -479,7 +488,7 @@ def _run_earthquake(
 
     cat_haz = catalog.load_hazard("earthquake", "observed", iso3, 2020)
     eq_props = {"spatial_coverage": "country", "country_iso3alpha": iso3, "event_type": "observed"}
-    haz = cat_haz or Client().get_hazard("earthquake", properties=eq_props)
+    haz = cat_haz or resilient_get_hazard(Client(), "earthquake", properties=eq_props)
     htype = haz.haz_type  # "EQ"; intensity is Modified Mercalli Intensity (MMI)
     # Indicative MMI damage function (rises from ~MMI 5 to total by ~MMI 10).
     impf = ImpactFunc(
@@ -852,7 +861,7 @@ def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
     options: dict[str, Any] = request.get("options", {})
 
     results: list[dict[str, Any]] = []
-    for peril in perils:
+    for i, peril in enumerate(perils, start=1):
         runner = _RUNNERS.get(peril)
         if runner is None:
             results.append(
@@ -863,12 +872,18 @@ def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
                 }
             )
             continue
+        # Progress line per peril (worker stdout is unbuffered) so a long multi-peril run
+        # is observable — the first fetch of each hazard can take a while.
+        print(f"[{i}/{len(perils)}] running peril '{peril}' …", flush=True)
         try:
-            results.append(runner(assets, scenario, anchor_years, options))
+            res = runner(assets, scenario, anchor_years, options)
+            results.append(res)
+            print(f"[{i}/{len(perils)}] peril '{peril}' → {res.get('status')}", flush=True)
         except Exception as exc:
             results.append(
                 {"peril": peril, "status": "error", "detail": f"{type(exc).__name__}: {exc}"}
             )
+            print(f"[{i}/{len(perils)}] peril '{peril}' → error: {exc}", flush=True)
 
     ok = [r for r in results if r["status"] == "ok"]
     if ok and len(ok) == len(results):

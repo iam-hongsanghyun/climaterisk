@@ -79,6 +79,9 @@ class RunManager:
         env = {
             **os.environ,
             "MPLBACKEND": "Agg",
+            # Stream worker stdout/stderr unbuffered so worker.log shows live progress
+            # during long multi-peril runs (otherwise it stays empty until the process exits).
+            "PYTHONUNBUFFERED": "1",
             "CLIMATERISK_HAZARD_DB": str(self._settings.hazard_db_path),
         }
         if self._settings.dem_path:

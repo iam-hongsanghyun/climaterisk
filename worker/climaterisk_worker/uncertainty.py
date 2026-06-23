@@ -61,6 +61,8 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
     try:
         from climada.util.api_client import Client
 
+        from climaterisk_worker._dataapi import resilient_get_hazard
+
         client = Client()
         base_props = {
             "event_type": "synthetic",
@@ -69,7 +71,8 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
         }
         if iso3 is not None:
             try:
-                present_haz = client.get_hazard(
+                present_haz = resilient_get_hazard(
+                    client,
                     "tropical_cyclone",
                     properties={
                         **base_props,
@@ -80,8 +83,8 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
             except Exception:
                 present_haz = None
         if present_haz is None:
-            present_haz = client.get_hazard(
-                "tropical_cyclone", properties={**base_props, "spatial_coverage": "global"}
+            present_haz = resilient_get_hazard(
+                client, "tropical_cyclone", properties={**base_props, "spatial_coverage": "global"}
             )
     except Exception:
         present_haz = None

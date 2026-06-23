@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from climaterisk_worker import catalog
+from climaterisk_worker._dataapi import resilient_get_hazard
 from climaterisk_worker.physical import (
     _TC_REF_YEARS,
     _build_exposures,
@@ -44,13 +45,16 @@ def _tc_hazard(iso3: str | None, climate_scenario: str, ref_year: int | None):  
         props["ref_year"] = str(ref_year)
     if iso3 is not None:
         try:
-            return client.get_hazard(
+            return resilient_get_hazard(
+                client,
                 "tropical_cyclone",
                 properties={**props, "spatial_coverage": "country", "country_iso3alpha": iso3},
             )
         except Exception:
             pass
-    return client.get_hazard("tropical_cyclone", properties={**props, "spatial_coverage": "global"})
+    return resilient_get_hazard(
+        client, "tropical_cyclone", properties={**props, "spatial_coverage": "global"}
+    )
 
 
 def _build_measure(spec: dict[str, Any]):  # type: ignore[no-untyped-def]
