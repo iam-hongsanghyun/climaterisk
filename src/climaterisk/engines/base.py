@@ -263,6 +263,11 @@ class UncertaintyResult(BaseModel):
     sensitivity_s1: dict[str, float] = Field(default_factory=dict)  # Sobol first-order
     sensitivity_st: dict[str, float] = Field(default_factory=dict)  # Sobol total-order
     sensitivity_method: str = "sobol"
+    # Climate-change delta (future AAI distribution vs present-day baseline AAI).
+    present_aai: float | None = None
+    delta_mean: float | None = None
+    delta_p5: float | None = None
+    delta_p95: float | None = None
     detail: str | None = None
 
 

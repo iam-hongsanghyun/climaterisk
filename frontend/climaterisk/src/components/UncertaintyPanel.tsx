@@ -79,6 +79,14 @@ export function UncertaintyPanel({
             <Kpi label="P5 – P95" value={`${money(u.aai_p5, cur)} – ${money(u.aai_p95, cur)}`} />
             <Kpi label="Std dev" value={money(u.aai_std, cur)} />
           </div>
+          {u.delta_mean != null && u.delta_p5 != null && u.delta_p95 != null && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              <strong>Climate-change delta</strong> (future vs present baseline{" "}
+              {u.present_aai != null ? money(u.present_aai, cur) : "—"}/yr): mean{" "}
+              <strong>{money(u.delta_mean, cur)}</strong>/yr, P5–P95 {money(u.delta_p5, cur)} –{" "}
+              {money(u.delta_p95, cur)}.
+            </p>
+          )}
           <div style={{ marginTop: 12 }}>
             <Histogram values={u.distribution} currency={cur} />
           </div>

@@ -212,6 +212,10 @@ export interface UncertaintyResult {
   sensitivity_s1?: Record<string, number>;
   sensitivity_st?: Record<string, number>;
   sensitivity_method?: string;
+  present_aai?: number | null;
+  delta_mean?: number | null;
+  delta_p5?: number | null;
+  delta_p95?: number | null;
   detail: string | null;
 }
 

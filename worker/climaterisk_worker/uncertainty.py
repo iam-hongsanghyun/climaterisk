@@ -56,6 +56,36 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
     )
     haz = _tc_hazard(iso3, scenario, ref_year)
 
+    # Present-day baseline hazard for the climate-change delta (best-effort: Data API / cache).
+    present_haz = None
+    try:
+        from climada.util.api_client import Client
+
+        client = Client()
+        base_props = {
+            "event_type": "synthetic",
+            "model_name": "random_walk",
+            "climate_scenario": "None",
+        }
+        if iso3 is not None:
+            try:
+                present_haz = client.get_hazard(
+                    "tropical_cyclone",
+                    properties={
+                        **base_props,
+                        "spatial_coverage": "country",
+                        "country_iso3alpha": iso3,
+                    },
+                )
+            except Exception:
+                present_haz = None
+        if present_haz is None:
+            present_haz = client.get_hazard(
+                "tropical_cyclone", properties={**base_props, "spatial_coverage": "global"}
+            )
+    except Exception:
+        present_haz = None
+
     lats = [float(a["lat"]) for a in assets]
     lons = [float(a["lon"]) for a in assets]
     base_values = np.array([float(a["value"]) for a in assets])
@@ -89,6 +119,36 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
     s1 = {n: float(max(0.0, v)) for n, v in zip(names, Si["S1"], strict=False)}
     st = {n: float(max(0.0, v)) for n, v in zip(names, Si["ST"], strict=False)}
 
+    # Climate-change delta: the future AAI distribution vs the present-day baseline AAI
+    # (CalcDeltaImpact-style). Present is computed once at the base (unscaled) inputs.
+    present_aai: float | None = None
+    if present_haz is not None:
+        try:
+            uniq = sorted({round(v, 1) for v in base_vhalf})
+            idb = {v: i + 1 for i, v in enumerate(uniq)}
+            base_impf = ImpactFuncSet(
+                [
+                    ImpfTropCyclone.from_emanuel_usa(impf_id=i + 1, v_half=v)
+                    for i, v in enumerate(uniq)
+                ]
+            )
+            base_exp = Exposures(
+                pd.DataFrame(
+                    {
+                        "latitude": lats,
+                        "longitude": lons,
+                        "value": base_values,
+                        "impf_TC": [idb[round(v, 1)] for v in base_vhalf],
+                    }
+                )
+            )
+            present_aai = float(
+                ImpactCalc(base_exp, base_impf, present_haz).impact(assign_centroids=True).aai_agg
+            )
+        except Exception:
+            present_aai = None
+    delta = (Y - present_aai) if present_aai is not None else None
+
     return {
         "status": "ok",
         "peril": "tropical_cyclone",
@@ -105,6 +165,10 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
         "sensitivity_s1": s1,
         "sensitivity_st": st,
         "sensitivity_method": "sobol",
+        "present_aai": present_aai,
+        "delta_mean": float(np.mean(delta)) if delta is not None else None,
+        "delta_p5": float(np.percentile(delta, 5)) if delta is not None else None,
+        "delta_p95": float(np.percentile(delta, 95)) if delta is not None else None,
         "detail": (
             f"{iso3 or 'global'} TC; Sobol variance decomposition "
             f"({len(Y)} model evals, base N={base_n}), horizon {ref_year}"
