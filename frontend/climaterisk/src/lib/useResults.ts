@@ -142,7 +142,7 @@ export function useResults(sessionId: string) {
     setUncBusy(true);
     setUncRun(null);
     try {
-      setUncRun(await submitUncertainty(sessionId, 50));
+      setUncRun(await submitUncertainty(sessionId, 16));
     } catch (e) {
       setUncErr(String(e));
     } finally {

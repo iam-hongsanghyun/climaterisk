@@ -209,6 +209,9 @@ export interface UncertaintyResult {
   aai_p95: number;
   distribution: number[];
   sensitivity: Record<string, number>;
+  sensitivity_s1?: Record<string, number>;
+  sensitivity_st?: Record<string, number>;
+  sensitivity_method?: string;
   detail: string | null;
 }
 

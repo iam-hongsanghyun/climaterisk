@@ -64,11 +64,11 @@ export function UncertaintyPanel({
     <div className="card">
       <div className="section-title">Uncertainty &amp; sensitivity</div>
       <p className="hint">
-        Monte-Carlo over exposure value, vulnerability and hazard frequency → the AAI as a range,
-        not a point, plus which input drives the spread.
+        Sobol variance decomposition (SALib) over exposure value, vulnerability and hazard
+        frequency → the AAI as a range, not a point, plus which input drives the spread.
       </p>
       <button className="btn" onClick={onRun} disabled={busy || running}>
-        {running ? "Running Monte-Carlo…" : busy ? "Submitting…" : "Run uncertainty"}
+        {running ? "Running Sobol analysis…" : busy ? "Submitting…" : "Run uncertainty"}
       </button>
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
 
@@ -83,7 +83,7 @@ export function UncertaintyPanel({
             <Histogram values={u.distribution} currency={cur} />
           </div>
           <div className="section-title" style={{ marginTop: 8, marginBottom: 6 }}>
-            Sensitivity (|correlation| with AAI)
+            Sobol total-order sensitivity (share of AAI variance)
           </div>
           {Object.entries(u.sensitivity)
             .sort((a, b) => b[1] - a[1])
@@ -106,9 +106,10 @@ export function UncertaintyPanel({
               </div>
             ))}
           <MethodNote>
-            {u.n_samples} Monte-Carlo samples; AAI scales linearly with value &amp; frequency,
-            non-linearly with vulnerability (Emanuel v½). Deeper option: CLIMADA <code>unsequa</code>{" "}
-            Sobol decomposition. {u.detail}
+            {u.n_samples} model evaluations on a Saltelli design (SALib, the engine behind
+            CLIMADA <code>unsequa</code>); bars are total-order Sobol indices — each input&apos;s
+            share of AAI variance including interactions. AAI scales linearly with value &amp;
+            frequency, non-linearly with vulnerability (Emanuel v½). {u.detail}
           </MethodNote>
         </>
       )}

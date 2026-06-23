@@ -259,7 +259,10 @@ class UncertaintyResult(BaseModel):
     aai_p50: float = 0.0
     aai_p95: float = 0.0
     distribution: list[float] = Field(default_factory=list)
-    sensitivity: dict[str, float] = Field(default_factory=dict)
+    sensitivity: dict[str, float] = Field(default_factory=dict)  # headline (total-order)
+    sensitivity_s1: dict[str, float] = Field(default_factory=dict)  # Sobol first-order
+    sensitivity_st: dict[str, float] = Field(default_factory=dict)  # Sobol total-order
+    sensitivity_method: str = "sobol"
     detail: str | None = None
 
 

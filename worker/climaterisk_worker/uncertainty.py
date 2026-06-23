@@ -1,14 +1,16 @@
-"""Monte-Carlo uncertainty + sensitivity for physical risk (CLIMADA ``ImpactCalc``).
+"""Uncertainty + Sobol sensitivity for physical risk (CLIMADA ``ImpactCalc`` + SALib).
 
 Propagates three input uncertainties through repeated impact calculations:
-  - exposure value      (× U[0.8, 1.2])
-  - vulnerability        (Emanuel ``v_half`` × U[0.9, 1.1])
-  - hazard frequency     (× U[0.85, 1.15])
+  - exposure value   (× U[0.8, 1.2])
+  - vulnerability    (Emanuel ``v_half`` × U[0.9, 1.1])
+  - hazard frequency (× U[0.85, 1.15])
 
-and reports the AAI distribution (mean/std/percentiles) plus a first-order
-sensitivity (|Pearson correlation| of each sampled factor with AAI). This is the
-tractable Monte-Carlo variant; CLIMADA's ``unsequa`` Sobol decomposition is the
-deeper option (noted in the UI). TC-first.
+Sampling is a Saltelli design (SALib — the same engine CLIMADA's ``unsequa`` uses), so
+the variance decomposition yields proper **Sobol** indices: first-order ``S1`` (each
+input's own contribution to AAI variance) and total-order ``ST`` (its contribution
+including interactions). Returns the AAI distribution (mean/std/percentiles) too. TC-first.
+
+Model evaluations = base_N × (num_inputs + 2); base_N is capped for tractability.
 """
 
 from __future__ import annotations
@@ -23,22 +25,31 @@ from climaterisk_worker.physical import (
     _single_country_iso3,
 )
 
+_PROBLEM = {
+    "num_vars": 3,
+    "names": ["exposure_value", "vulnerability", "hazard_frequency"],
+    "bounds": [[0.8, 1.2], [0.9, 1.1], [0.85, 1.15]],
+}
+
 
 def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
-    """Run a Monte-Carlo AAI uncertainty + sensitivity analysis."""
+    """Run a Sobol AAI uncertainty + sensitivity analysis."""
     import numpy as np
     import pandas as pd
     from climada.engine import ImpactCalc
     from climada.entity import Exposures, ImpactFuncSet
     from climada.entity.impact_funcs.trop_cyclone import ImpfTropCyclone
+    from SALib.analyze import sobol as sobol_analyze
+    from SALib.sample import sobol as sobol_sample
 
     assets: list[dict[str, Any]] = request["assets"]
     scenario: str = request["climate_scenario"]
     anchor_years: list[int] = request["anchor_years"]
-    n_samples = int(request.get("n_samples", 50))
     if not assets:
         return {"status": "error", "detail": "portfolio has no assets"}
 
+    # base_N drives the Saltelli design; cap evals = base_N*(D+2) for tractability.
+    base_n = max(8, min(int(request.get("n_samples", 16)), 64))
     ref_year = _nearest(_TC_REF_YEARS, max(anchor_years) if anchor_years else _TC_REF_YEARS[0])
     iso3 = _single_country_iso3(
         _per_asset_iso3([a["lat"] for a in assets], [a["lon"] for a in assets])
@@ -50,15 +61,9 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
     base_values = np.array([float(a["value"]) for a in assets])
     base_vhalf = np.array([float(a["tc_v_half"]) for a in assets])
 
-    rng = np.random.default_rng(42)
-    aais, f_val, f_vul, f_freq = [], [], [], []
-    for _ in range(n_samples):
-        fv = float(rng.uniform(0.8, 1.2))  # exposure value
-        fh = float(rng.uniform(0.9, 1.1))  # vulnerability (v_half scale)
-        ff = float(rng.uniform(0.85, 1.15))  # hazard frequency
-
-        scaled_vhalf = base_vhalf * fh
-        uniq = sorted({round(v, 1) for v in scaled_vhalf})
+    def evaluate(fv: float, fh: float, ff: float) -> float:
+        scaled = base_vhalf * fh
+        uniq = sorted({round(v, 1) for v in scaled})
         id_by = {v: i + 1 for i, v in enumerate(uniq)}
         impf_set = ImpactFuncSet(
             [ImpfTropCyclone.from_emanuel_usa(impf_id=i + 1, v_half=v) for i, v in enumerate(uniq)]
@@ -69,38 +74,39 @@ def compute_uncertainty(request: dict[str, Any]) -> dict[str, Any]:
                     "latitude": lats,
                     "longitude": lons,
                     "value": base_values * fv,
-                    "impf_TC": [id_by[round(v, 1)] for v in scaled_vhalf],
+                    "impf_TC": [id_by[round(v, 1)] for v in scaled],
                 }
             )
         )
         imp = ImpactCalc(exp, impf_set, haz).impact(assign_centroids=True)
-        aais.append(float(imp.aai_agg) * ff)  # frequency scales AAI linearly
-        f_val.append(fv)
-        f_vul.append(fh)
-        f_freq.append(ff)
+        return float(imp.aai_agg) * ff  # frequency scales AAI linearly
 
-    aai = np.array(aais)
+    param_values = sobol_sample.sample(_PROBLEM, base_n, calc_second_order=False)
+    Y = np.array([evaluate(float(r[0]), float(r[1]), float(r[2])) for r in param_values])
 
-    def sens(factor: list[float]) -> float:
-        c = np.corrcoef(factor, aai)[0, 1]
-        return float(abs(c)) if np.isfinite(c) else 0.0
+    Si = sobol_analyze.analyze(_PROBLEM, Y, calc_second_order=False, print_to_console=False)
+    names = _PROBLEM["names"]
+    s1 = {n: float(max(0.0, v)) for n, v in zip(names, Si["S1"], strict=False)}
+    st = {n: float(max(0.0, v)) for n, v in zip(names, Si["ST"], strict=False)}
 
     return {
         "status": "ok",
         "peril": "tropical_cyclone",
         "future_year": ref_year,
-        "n_samples": n_samples,
+        "n_samples": len(Y),
         "currency": assets[0]["currency"],
-        "aai_mean": float(aai.mean()),
-        "aai_std": float(aai.std()),
-        "aai_p5": float(np.percentile(aai, 5)),
-        "aai_p50": float(np.percentile(aai, 50)),
-        "aai_p95": float(np.percentile(aai, 95)),
-        "distribution": [float(x) for x in np.sort(aai)],
-        "sensitivity": {
-            "exposure_value": sens(f_val),
-            "vulnerability": sens(f_vul),
-            "hazard_frequency": sens(f_freq),
-        },
-        "detail": f"{iso3 or 'global'} TC; {n_samples} Monte-Carlo samples, horizon {ref_year}",
+        "aai_mean": float(Y.mean()),
+        "aai_std": float(Y.std()),
+        "aai_p5": float(np.percentile(Y, 5)),
+        "aai_p50": float(np.percentile(Y, 50)),
+        "aai_p95": float(np.percentile(Y, 95)),
+        "distribution": [float(x) for x in np.sort(Y)],
+        "sensitivity": st,  # headline = total-order (back-compatible with the existing UI bars)
+        "sensitivity_s1": s1,
+        "sensitivity_st": st,
+        "sensitivity_method": "sobol",
+        "detail": (
+            f"{iso3 or 'global'} TC; Sobol variance decomposition "
+            f"({len(Y)} model evals, base N={base_n}), horizon {ref_year}"
+        ),
     }
