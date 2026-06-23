@@ -423,12 +423,91 @@ def _run_earthquake(
     }
 
 
+def _run_coastal_flood(
+    assets: list[dict[str, Any]], climate_scenario: str, anchor_years: list[int]
+) -> dict[str, Any]:
+    """Coastal flood / sea-level rise — depth-damage on a locally-ingested Aqueduct hazard.
+
+    Coastal flood is not in the CLIMADA Data API, so this runner is catalog-only: ingest
+    WRI Aqueduct coastal layers first (``source='aqueduct'``, ``peril='coastal_flood'``).
+    Uses the same depth-damage curve fields as river flood (intensity = inundation m).
+    """
+    import numpy as np
+    from climada.entity import ImpactFunc, ImpactFuncSet
+
+    target = max(anchor_years) if anchor_years else 2050
+    iso3s = _per_asset_iso3([a["lat"] for a in assets], [a["lon"] for a in assets])
+    iso3 = _single_country_iso3(iso3s)
+    region = iso3 or "global"
+
+    future = catalog.load_hazard("coastal_flood", climate_scenario, region, target)
+    if future is None:
+        raise ValueError(
+            "coastal flood has no local hazard for this portfolio — ingest WRI Aqueduct "
+            "coastal layers first (Data tab → Fetch & ingest, source 'aqueduct')."
+        )
+
+    # One depth-damage ImpactFunc per distinct curve; assign each asset to its id.
+    curve_key = [tuple(round(float(x), 4) for x in a["flood_mdr"]) for a in assets]
+    distinct = sorted(set(curve_key))
+    id_by_curve = {c: i + 1 for i, c in enumerate(distinct)}
+    funcs = []
+    for curve, fid in id_by_curve.items():
+        depths = np.array(assets[curve_key.index(curve)]["flood_depth_m"], dtype=float)
+        funcs.append(
+            ImpactFunc(
+                haz_type="CF",
+                id=fid,
+                intensity=depths,
+                mdd=np.array(curve, dtype=float),
+                paa=np.ones_like(depths),
+                intensity_unit="m",
+                name=f"coastal_flood_{fid}",
+            )
+        )
+    impf_set = ImpactFuncSet(funcs)
+    impf_ids = [id_by_curve[c] for c in curve_key]
+    exp = _build_exposures(assets, "impf_CF", impf_ids)
+
+    fut = _impact(exp, impf_set, future)
+    present = catalog.load_hazard("coastal_flood", "historical", region, None)
+    present_aai = float(_impact(exp, impf_set, present).aai_agg) if present is not None else None
+
+    eai = [float(x) for x in fut.eai_exp]
+    fc = fut.calc_freq_curve(_RETURN_PERIODS)
+    future_aai = float(fut.aai_agg)
+    delta = (
+        ((future_aai - present_aai) / present_aai * 100.0)
+        if present_aai and present_aai > 0
+        else None
+    )
+    return {
+        "peril": "coastal_flood",
+        "status": "ok",
+        "target_year": target,
+        "aai_agg": future_aai,
+        "present_aai_agg": present_aai,
+        "delta_pct": delta,
+        "total_value": float(sum(a["value"] for a in assets)),
+        "per_asset": [
+            {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
+            for i, a in enumerate(assets)
+        ],
+        "freq_curve": {
+            "return_periods": [float(x) for x in fc.return_per],
+            "impact": [float(x) for x in fc.impact],
+        },
+        "detail": f"local catalog coastal flood (WRI Aqueduct), region {region}",
+    }
+
+
 _RUNNERS = {
     "tropical_cyclone": _run_tropical_cyclone,
     "river_flood": _run_river_flood,
     "wildfire": _run_wildfire,
     "european_windstorm": _run_european_windstorm,
     "earthquake": _run_earthquake,
+    "coastal_flood": _run_coastal_flood,
 }
 
 

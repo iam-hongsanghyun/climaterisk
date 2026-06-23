@@ -35,6 +35,10 @@ _AQ_GCM = "00000NorESM1-M"
 _AQ_FUTURE_YEARS = (2030, 2050, 2080)
 # Platform climate scenario -> Aqueduct emissions scenario (only 4p5 / 8p5 exist).
 _AQ_SCENARIO = {"rcp26": "rcp4p5", "rcp45": "rcp4p5", "rcp60": "rcp8p5", "rcp85": "rcp8p5"}
+# Coastal flood (inuncoast_*): return periods + subsidence/sea-level-rise tokens.
+_AQ_COAST_RPS = (2, 5, 10, 25, 50, 100, 250, 500, 1000)
+_AQ_COAST_SUBSIDENCE = "wtsub"  # with subsidence (more conservative than nosub)
+_AQ_COAST_SLR = "0"  # sea-level-rise scenario token (0 = 50th-percentile central estimate)
 
 # --- CLIMADA Data API future windows -------------------------------------------
 _TC_REF_YEARS = (2040, 2060, 2080)
@@ -100,6 +104,24 @@ def _aq_river_layers(scenario: str, year: int) -> tuple[str, list[tuple[int, str
     return label, urls
 
 
+def _aq_coast_layers(scenario: str, year: int) -> tuple[str, list[tuple[int, str]]]:
+    """Return ``(label, [(rp, url), ...])`` for Aqueduct coastal inundation (inuncoast_*)."""
+    sub, slr = _AQ_COAST_SUBSIDENCE, _AQ_COAST_SLR
+    if scenario == "historical":
+        urls = [
+            (rp, f"{_AQ_BASE}/inuncoast_historical_{sub}_hist_rp{rp:04d}_{slr}.tif")
+            for rp in _AQ_COAST_RPS
+        ]
+        return f"historical {sub}", urls
+    aq_scen = _AQ_SCENARIO.get(scenario, "rcp8p5")
+    yr = _nearest(_AQ_FUTURE_YEARS, year)
+    urls = [
+        (rp, f"{_AQ_BASE}/inuncoast_{aq_scen}_{sub}_{yr}_rp{rp:04d}_{slr}.tif")
+        for rp in _AQ_COAST_RPS
+    ]
+    return f"{aq_scen} {sub} {yr}", urls
+
+
 def _incremental_frequency(rps: list[int]):  # type: ignore[no-untyped-def]
     """Event frequency = incremental exceedance probability ``1/rp_i − 1/rp_{i+1}``."""
     import numpy as np
@@ -110,28 +132,26 @@ def _incremental_frequency(rps: list[int]):  # type: ignore[no-untyped-def]
     return freq
 
 
-def ingest_aqueduct(request: dict[str, Any]) -> dict[str, Any]:
-    """Build a CLIMADA river-flood ``Hazard`` from Aqueduct RP GeoTIFFs over the bbox."""
+# Aqueduct flood peril -> (CLIMADA haz_type, layer-plan function).
+_AQ_FLOOD = {
+    "river_flood": ("RF", _aq_river_layers),
+    "coastal_flood": ("CF", _aq_coast_layers),
+}
+
+
+def _read_aqueduct_rp_layers(  # type: ignore[no-untyped-def]
+    layers: list[tuple[int, str]], bbox: tuple[float, float, float, float]
+):
+    """Read return-period GeoTIFFs over a bbox; return ``(lat, lon, rows, used_rps)``.
+
+    Each layer is read over ``/vsicurl`` for the bbox only (no full download); a
+    missing/unreachable RP layer is skipped rather than aborting the ingest.
+    """
     import numpy as np
     import rasterio
-    from climada.hazard import Hazard
     from rasterio.windows import from_bounds
-    from scipy import sparse
 
-    from climaterisk_worker.hazard_convert import _centroids
-
-    points = request["points"]
-    scenario = request["scenario"]
-    year = int(request["year"])
-    pad = float(request.get("pad", 0.5))
-    max_span = float(request.get("max_span", 8.0))
-    if not points:
-        raise ValueError("aqueduct ingest needs portfolio asset points to bound the download")
-
-    region = _region_for_points(points)
-    minlon, minlat, maxlon, maxlat = _bbox(points, pad, max_span)
-    label, layers = _aq_river_layers(scenario, year)
-
+    minlon, minlat, maxlon, maxlat = bbox
     lat = lon = None
     rows: list[Any] = []
     used_rps: list[int] = []
@@ -158,9 +178,34 @@ def ingest_aqueduct(request: dict[str, Any]) -> dict[str, Any]:
             continue
         rows.append(flat)
         used_rps.append(rp)
+    return lat, lon, rows, used_rps
 
+
+def ingest_aqueduct(request: dict[str, Any]) -> dict[str, Any]:
+    """Build a CLIMADA flood ``Hazard`` (riverine or coastal) from Aqueduct RP GeoTIFFs."""
+    import numpy as np
+    from climada.hazard import Hazard
+    from scipy import sparse
+
+    from climaterisk_worker.hazard_convert import _centroids
+
+    points = request["points"]
+    scenario = request["scenario"]
+    year = int(request["year"])
+    peril = request.get("peril", "river_flood")
+    pad = float(request.get("pad", 0.5))
+    max_span = float(request.get("max_span", 8.0))
+    if not points:
+        raise ValueError("aqueduct ingest needs portfolio asset points to bound the download")
+    if peril not in _AQ_FLOOD:
+        raise ValueError(f"aqueduct ingest does not support peril '{peril}'")
+    haz_type, layers_fn = _AQ_FLOOD[peril]
+
+    region = _region_for_points(points)
+    label, layers = layers_fn(scenario, year)
+    lat, lon, rows, used_rps = _read_aqueduct_rp_layers(layers, _bbox(points, pad, max_span))
     if len(used_rps) < 2 or lat is None:
-        raise ValueError(f"Aqueduct returned no usable flood layers for bbox/{label}")
+        raise ValueError(f"Aqueduct returned no usable {peril} layers for bbox/{label}")
 
     order = np.argsort(used_rps)
     rps_sorted = [used_rps[i] for i in order]
@@ -169,7 +214,7 @@ def ingest_aqueduct(request: dict[str, Any]) -> dict[str, Any]:
     n_ev = len(rps_sorted)
 
     haz = Hazard(
-        haz_type="RF",
+        haz_type=haz_type,
         units="m",
         centroids=_centroids(lat, lon),
         event_id=np.arange(1, n_ev + 1),
@@ -182,21 +227,21 @@ def ingest_aqueduct(request: dict[str, Any]) -> dict[str, Any]:
     haz.check()
 
     db = catalog.catalog_dir()
-    peril_dir = db / "river_flood"
+    peril_dir = db / peril
     peril_dir.mkdir(parents=True, exist_ok=True)
-    fname = f"RF_{scenario}_{region}_{year}.hdf5"
+    fname = f"{haz_type}_{scenario}_{region}_{year}.hdf5"
     haz.write_hdf5(str(peril_dir / fname))
     return {
-        "peril": "river_flood",
-        "haz_type": "RF",
+        "peril": peril,
+        "haz_type": haz_type,
         "climate_scenario": scenario,
         "region": region,
         "year": year,
         "units": "m",
-        "file": f"river_flood/{fname}",
+        "file": f"{peril}/{fname}",
         "n_events": int(haz.size),
         "n_centroids": int(haz.centroids.size),
-        "source": f"WRI Aqueduct Floods v2 ({label}, RPs {rps_sorted})",
+        "source": f"WRI Aqueduct Floods v2 ({peril}, {label}, RPs {rps_sorted})",
         "license": "CC-BY 4.0",
     }
 
