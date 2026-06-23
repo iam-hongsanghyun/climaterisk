@@ -434,12 +434,69 @@ def ingest_copernicus_dem(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --- TCTracks refiner (generate a TC wind hazard from IBTrACS) -----------------
+
+
+def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
+    """Generate a tropical-cyclone wind hazard from IBTrACS (+ synthetic perturbation).
+
+    Builds the platform its own TC hazard set (no Data-API dependency) over the portfolio
+    bbox and files it under the TC catalog key so the TC runner picks it up. Bounded
+    (recent years, few synthetic tracks, coarse centroids) for tractability; needs network
+    (IBTrACS download).
+    """
+    from climada.hazard import Centroids, TCTracks, TropCyclone
+
+    points = request["points"]
+    scenario = request["scenario"]
+    year = int(request["year"])
+    if not points:
+        raise ValueError("tctracks ingest needs portfolio asset points to bound the hazard")
+    region = _region_for_points(points)
+    nb_synth = int(request.get("nb_synth_tracks", 2))
+    basin = request.get("basin")  # optional 2-letter basin (e.g. "WP", "NA")
+
+    tracks = TCTracks.from_ibtracs_netcdf(
+        year_range=(2010, 2021), basin=basin, estimate_missing=True
+    )
+    if tracks.size == 0:
+        raise ValueError(f"no IBTrACS tracks for basin={basin} 2010–2021")
+    tracks.equal_timestep()
+    if nb_synth > 0:
+        tracks.calc_perturbed_trajectories(nb_synth_tracks=nb_synth)
+
+    minlon, minlat, maxlon, maxlat = _bbox(points, pad=1.0, max_span=6.0)
+    cent = Centroids.from_pnt_bounds((minlon, minlat, maxlon, maxlat), res=0.1)
+    tc = TropCyclone.from_tracks(tracks, centroids=cent)
+
+    ref_year = _nearest(_TC_REF_YEARS, year)
+    db = catalog.catalog_dir()
+    peril_dir = db / "tropical_cyclone"
+    peril_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{tc.haz_type}_{scenario}_{region}_{ref_year}.hdf5"
+    tc.write_hdf5(str(peril_dir / fname))
+    return {
+        "peril": "tropical_cyclone",
+        "haz_type": tc.haz_type,
+        "climate_scenario": scenario,
+        "region": region,
+        "year": ref_year,
+        "units": tc.units,
+        "file": f"tropical_cyclone/{fname}",
+        "n_events": int(tc.size),
+        "n_centroids": int(tc.centroids.size),
+        "source": f"IBTrACS synthetic tracks (TCTracks, {nb_synth}× perturbed)",
+        "license": "IBTrACS (US public domain)",
+    }
+
+
 # --- dispatch ------------------------------------------------------------------
 
 _REFINERS = {
     "dataapi": ingest_dataapi,
     "aqueduct": ingest_aqueduct,
     "copdem": ingest_copernicus_dem,
+    "tctracks": ingest_tctracks,
 }
 
 
