@@ -83,7 +83,7 @@ export interface DataSourceCategory {
   note?: string;
 }
 export type FetchMode = "auto" | "auto-download" | "manual" | "needs_login" | "operational";
-export type IngestSource = "dataapi" | "aqueduct" | "copdem" | "tctracks";
+export type IngestSource = "dataapi" | "aqueduct" | "copdem" | "tctracks" | "tcrain";
 export interface DataSourceFetch {
   mode: FetchMode;
   source?: IngestSource;

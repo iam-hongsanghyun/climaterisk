@@ -451,21 +451,18 @@ def ingest_copernicus_dem(request: dict[str, Any]) -> dict[str, Any]:
 # --- TCTracks refiner (generate a TC wind hazard from IBTrACS) -----------------
 
 
-def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
-    """Generate a tropical-cyclone wind hazard from IBTrACS (+ synthetic perturbation).
+def _synth_tctracks(request: dict[str, Any]):  # type: ignore[no-untyped-def]
+    """IBTrACS observed tracks (+ synthetic perturbation) + portfolio-bbox centroids.
 
-    Builds the platform its own TC hazard set (no Data-API dependency) over the portfolio
-    bbox and files it under the TC catalog key so the TC runner picks it up. Bounded
-    (recent years, few synthetic tracks, coarse centroids) for tractability; needs network
-    (IBTrACS download).
+    Shared by the TCTracks (wind) and TCRain ingesters. Returns ``(tracks, centroids,
+    region, nb_synth)``. Bounded (recent years, few synthetic tracks, coarse grid) for
+    tractability; needs network (IBTrACS download).
     """
-    from climada.hazard import Centroids, TCTracks, TropCyclone
+    from climada.hazard import Centroids, TCTracks
 
     points = request["points"]
-    scenario = request["scenario"]
-    year = int(request["year"])
     if not points:
-        raise ValueError("tctracks ingest needs portfolio asset points to bound the hazard")
+        raise ValueError("TC-tracks ingest needs portfolio asset points to bound the hazard")
     region = _region_for_points(points)
     nb_synth = int(request.get("nb_synth_tracks", 2))
     basin = request.get("basin")  # optional 2-letter basin (e.g. "WP", "NA")
@@ -482,6 +479,22 @@ def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
 
     minlon, minlat, maxlon, maxlat = _bbox(points, pad=1.0, max_span=6.0)
     cent = Centroids.from_pnt_bounds((minlon, minlat, maxlon, maxlat), res=0.1)
+    return tracks, cent, region, nb_synth
+
+
+def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
+    """Generate a tropical-cyclone wind hazard from IBTrACS (+ synthetic perturbation).
+
+    Builds the platform its own TC hazard set (no Data-API dependency) over the portfolio
+    bbox and files it under the TC catalog key so the TC runner picks it up. Bounded
+    (recent years, few synthetic tracks, coarse centroids) for tractability; needs network
+    (IBTrACS download).
+    """
+    from climada.hazard import TropCyclone
+
+    scenario = request["scenario"]
+    year = int(request["year"])
+    tracks, cent, region, nb_synth = _synth_tctracks(request)
     tc = TropCyclone.from_tracks(tracks, centroids=cent)
 
     ref_year = _nearest(_TC_REF_YEARS, year)
@@ -505,6 +518,42 @@ def ingest_tctracks(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def ingest_tcrain(request: dict[str, Any]) -> dict[str, Any]:
+    """Generate a tropical-cyclone *rainfall* hazard (climada_petals ``TCRain``, R-CLIPER).
+
+    Reuses the IBTrACS-track pipeline, then derives rainfall (mm) via the analytic R-CLIPER
+    model — a real physical rainfall hazard rather than the indicative catalog ramp. Files
+    it under the ``tc_rain`` catalog key (haz_type ``TR``, mm) so the existing tc_rain runner
+    picks it up automatically. Needs network (IBTrACS download).
+    """
+    from climada_petals.hazard import TCRain
+
+    scenario = request["scenario"]
+    year = int(request["year"])
+    tracks, cent, region, nb_synth = _synth_tctracks(request)
+    rain = TCRain.from_tracks(tracks, centroids=cent, model="R-CLIPER")
+
+    ref_year = _nearest(_TC_REF_YEARS, year)
+    db = catalog.catalog_dir()
+    peril_dir = db / "tc_rain"
+    peril_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{rain.haz_type}_{scenario}_{region}_{ref_year}.hdf5"
+    rain.write_hdf5(str(peril_dir / fname))
+    return {
+        "peril": "tc_rain",
+        "haz_type": rain.haz_type,
+        "climate_scenario": scenario,
+        "region": region,
+        "year": ref_year,
+        "units": rain.units,
+        "file": f"tc_rain/{fname}",
+        "n_events": int(rain.size),
+        "n_centroids": int(rain.centroids.size),
+        "source": f"IBTrACS synthetic tracks → TCRain R-CLIPER ({nb_synth}× perturbed)",
+        "license": "IBTrACS (US public domain)",
+    }
+
+
 # --- dispatch ------------------------------------------------------------------
 
 _REFINERS = {
@@ -512,6 +561,7 @@ _REFINERS = {
     "aqueduct": ingest_aqueduct,
     "copdem": ingest_copernicus_dem,
     "tctracks": ingest_tctracks,
+    "tcrain": ingest_tcrain,
 }
 
 
