@@ -86,6 +86,17 @@ export async function submitLitPop(sessionId: string, country: string): Promise<
   });
 }
 
+export async function submitSupplyChain(
+  sessionId: string,
+  mriotType = "WIOD16",
+  mriotYear = 2010,
+): Promise<Run> {
+  return http<Run>(
+    `/api/session/${sessionId}/supplychain?mriot_type=${mriotType}&mriot_year=${mriotYear}`,
+    { method: "POST" },
+  );
+}
+
 export interface IngestBody {
   source: "dataapi" | "aqueduct";
   peril?: string;

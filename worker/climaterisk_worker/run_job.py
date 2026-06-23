@@ -54,6 +54,10 @@ def run(run_dir: Path) -> dict[str, Any]:
                 from climaterisk_worker.ingest import run_ingest
 
                 output = run_ingest(request)
+            elif mode == "supplychain":
+                from climaterisk_worker.supplychain import compute_supplychain
+
+                output = compute_supplychain(request)
             else:
                 output = compute_physical_risk(request)
         except Exception as exc:

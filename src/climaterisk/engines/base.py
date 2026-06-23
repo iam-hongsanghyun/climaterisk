@@ -351,3 +351,50 @@ class LitPopResult(BaseModel):
     currency: str = "USD"
     per_point: list[LitPopPoint] = Field(default_factory=list)
     detail: str | None = None
+
+
+# --- Supply-chain indirect (macro-economic) impact ---
+
+
+class SupplyChainRequest(BaseModel):
+    """Inputs for a supply-chain indirect-impact run (direct TC impact → MRIO propagation)."""
+
+    mode: str = "supplychain"
+    session_id: str
+    climate_scenario: str
+    anchor_years: list[int]
+    assets: list[AssetSpec]
+    mriot_type: str = "WIOD16"  # MRIO table: WIOD16 | EXIOBASE3 | OECD21 | …
+    mriot_year: int = 2010
+
+    @classmethod
+    def from_portfolio(
+        cls, portfolio: Portfolio, mriot_type: str = "WIOD16", mriot_year: int = 2010
+    ) -> SupplyChainRequest:
+        """Build a supply-chain request from the session model."""
+        return cls(
+            session_id=portfolio.id,
+            climate_scenario=portfolio.scenario.climate,
+            anchor_years=portfolio.scenario.anchor_years,
+            assets=resolve_asset_specs(portfolio),
+            mriot_type=mriot_type,
+            mriot_year=mriot_year,
+        )
+
+
+class SupplyChainSector(BaseModel):
+    sector: str
+    indirect: float
+
+
+class SupplyChainResult(BaseModel):
+    """Engine output for a supply-chain indirect-impact run."""
+
+    status: str
+    mriot: str = ""
+    currency: str = "USD"
+    total_direct: float = 0.0  # direct AAI on the portfolio
+    total_indirect: float = 0.0  # indirect (rippled) impact via the I/O table
+    amplification: float | None = None  # indirect / direct
+    by_sector: list[SupplyChainSector] = Field(default_factory=list)
+    detail: str | None = None

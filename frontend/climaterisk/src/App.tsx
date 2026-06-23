@@ -7,6 +7,7 @@ import { MapView } from "./views/MapView";
 import { ScenariosView } from "./views/ScenariosView";
 import { ResultsView } from "./views/ResultsView";
 import { AdaptationView } from "./views/AdaptationView";
+import { SupplyChainView } from "./views/SupplyChainView";
 import { VulnerabilityView } from "./views/VulnerabilityView";
 import { DataView } from "./views/DataView";
 import { MethodView } from "./views/MethodView";
@@ -129,6 +130,15 @@ export function App() {
               busy={results.cbBusy}
               error={results.cbErr}
               onRun={results.runCostBenefit}
+            />
+          )}
+          {view === "supplychain" && (
+            <SupplyChainView
+              model={model}
+              run={results.scRun}
+              busy={results.scBusy}
+              error={results.scErr}
+              onRun={results.runSupplyChain}
             />
           )}
           {view === "data" && <DataView model={model} libraries={libraries} />}
