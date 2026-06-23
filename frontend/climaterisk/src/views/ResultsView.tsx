@@ -204,6 +204,24 @@ export function ResultsView({
         >
           Download report
         </a>
+        {run?.status === "done" && (
+          <>
+            <a
+              className="btn secondary"
+              href={`/api/session/${model.id}/run/${run.id}/export?fmt=csv`}
+              style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
+            >
+              Export CSV
+            </a>
+            <a
+              className="btn secondary"
+              href={`/api/session/${model.id}/run/${run.id}/export?fmt=geojson`}
+              style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
+            >
+              Export GeoJSON
+            </a>
+          </>
+        )}
         {running && (
           <p className="hint" style={{ marginTop: 10 }}>
             ⏳ Physical run: {run?.status}. The first run downloads hazard data and can take a minute.

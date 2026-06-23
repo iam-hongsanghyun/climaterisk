@@ -5,9 +5,12 @@ POST submits a run (spawns the CLIMADA worker); GET polls until it is done/error
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
 from climaterisk.api.deps import get_run_manager, get_session_store
@@ -152,3 +155,51 @@ def get_run(session_id: str, run_id: str, manager: ManagerDep) -> Run:
     if run is None or run.session_id != session_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="run not found")
     return run
+
+
+def _per_asset_rows(output: dict) -> list[dict]:  # type: ignore[type-arg]
+    """Flatten a run's per-asset impacts (physical per-peril, or forecast/litpop)."""
+    rows: list[dict] = []  # type: ignore[type-arg]
+    for r in output.get("results", []) or []:  # physical: one block per peril
+        for a in r.get("per_asset", []):
+            rows.append({"peril": r.get("peril"), **a})
+    if not rows:  # forecast / litpop carry per_asset / per_point at the top level
+        for a in output.get("per_asset", []) or output.get("per_point", []):
+            rows.append(dict(a))
+    return rows
+
+
+@router.get("/{session_id}/run/{run_id}/export")
+def export_run(session_id: str, run_id: str, manager: ManagerDep, fmt: str = "csv") -> Response:
+    """Export a finished run's per-asset impacts as CSV or GeoJSON (download)."""
+    run = manager.poll(run_id)
+    if run is None or run.session_id != session_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="run not found")
+    rows = _per_asset_rows(run.output or {})
+    if fmt == "geojson":
+        features = [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [a.get("lon"), a.get("lat")]},
+                "properties": {k: v for k, v in a.items() if k not in ("lat", "lon")},
+            }
+            for a in rows
+            if a.get("lat") is not None and a.get("lon") is not None
+        ]
+        body = json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
+        return Response(
+            body,
+            media_type="application/geo+json",
+            headers={"Content-Disposition": f'attachment; filename="run_{run_id}.geojson"'},
+        )
+    buf = io.StringIO()
+    if rows:
+        fields = list({k for row in rows for k in row})
+        writer = csv.DictWriter(buf, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="run_{run_id}.csv"'},
+    )
