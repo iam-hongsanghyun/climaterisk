@@ -41,7 +41,14 @@ function PhysicalResult({ result, currency }: { result: PhysicalRunResult; curre
         <span className="pill">horizon {result.target_year}</span>
       </div>
       <div className="kpi-grid">
-        <Kpi label="Avg annual impact" value={`${money(result.aai_agg, currency)}/yr`} />
+        <Kpi
+          label={
+            result.result_kind && result.result_kind !== "monetary"
+              ? (result.metric_unit ?? result.result_kind)
+              : "Avg annual impact"
+          }
+          value={`${money(result.aai_agg, currency)}/yr`}
+        />
         <Kpi label="Total exposed value" value={money(result.total_value, currency)} />
         <Kpi
           label="AAI / value"

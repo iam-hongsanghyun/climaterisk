@@ -29,13 +29,16 @@ _ASSET = {
 }
 
 
-@pytest.mark.parametrize("peril", ["hail", "landslide", "tc_rain"])
+_PERILS = ["hail", "landslide", "tc_rain", "drought", "crop_yield", "low_flow", "heatwave"]
+
+
+@pytest.mark.parametrize("peril", _PERILS)
 def test_catalog_peril_registered(peril: str) -> None:
     assert peril in physical._RUNNERS
     assert peril in physical._CATALOG_PERILS
 
 
-@pytest.mark.parametrize("peril", ["hail", "landslide", "tc_rain"])
+@pytest.mark.parametrize("peril", _PERILS)
 def test_catalog_peril_needs_ingest(peril: str, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     pytest.importorskip("climada")
     # point the catalog at an empty dir so no hazard is found

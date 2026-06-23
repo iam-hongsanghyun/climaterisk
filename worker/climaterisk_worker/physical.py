@@ -678,18 +678,21 @@ def _run_tc_surge(
     }
 
 
-# Catalog-first damage perils that share one shape: load a locally-ingested hazard,
-# apply an indicative per-class damage ramp (max from wf_max_mdd), report AAI. These
-# perils are not in the CLIMADA Data API, so they require ingestion first.
-#   peril -> (haz_type, intensity_breakpoints, ramp_shape (0..1), unit, scenario_key, ingest_hint)
+# Catalog-first perils that share one shape: load a locally-ingested hazard, apply an
+# indicative per-class ramp (max from wf_max_mdd), report the expected-annual metric. Not
+# in the CLIMADA Data API → require ingestion first. Damage perils report monetary AAI;
+# the yield/productivity perils report a value-equivalent loss flagged via result_kind.
+#   peril -> (haz_type, breakpoints, ramp(0..1), unit, scenario_key, hint, result_kind, metric_unit)
 _CATALOG_PERILS: dict[str, Any] = {
     "hail": (
         "HL",
         [0.0, 2.0, 4.0, 6.0, 8.0, 10.0],
         [0.0, 0.0, 0.1, 0.3, 0.6, 1.0],
         "cm",
-        None,  # use the run's climate scenario
-        "ingest a hail hazard (e.g. MeteoSwiss MESHS) to the local catalog first.",
+        None,
+        "ingest a hail hazard (e.g. MeteoSwiss MESHS) first.",
+        "monetary",
+        None,
     ),
     "landslide": (
         "LS",
@@ -697,7 +700,9 @@ _CATALOG_PERILS: dict[str, Any] = {
         [0.0, 0.1, 0.3, 0.6, 1.0],
         "probability",
         "historical",
-        "ingest a landslide hazard (e.g. NASA COOLR via climada_petals) first.",
+        "ingest a landslide hazard (NASA COOLR) first.",
+        "monetary",
+        None,
     ),
     "tc_rain": (
         "TR",
@@ -705,7 +710,49 @@ _CATALOG_PERILS: dict[str, Any] = {
         [0.0, 0.05, 0.2, 0.5, 0.9],
         "mm",
         None,
-        "ingest a TC-rainfall hazard (climada_petals TCRain from generated tracks) first.",
+        "ingest a TC-rainfall hazard (climada_petals TCRain) first.",
+        "monetary",
+        None,
+    ),
+    "drought": (
+        "DR",
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        [0.0, 0.1, 0.3, 0.6, 1.0],
+        "SPEI",
+        "historical",
+        "ingest a drought (SPEI) hazard first.",
+        "productivity",
+        "expected annual productivity loss",
+    ),
+    "crop_yield": (
+        "CY",
+        [0.0, 0.1, 0.2, 0.4, 0.6],
+        [0.0, 0.25, 0.5, 0.8, 1.0],
+        "yield-frac",
+        None,
+        "ingest a crop-yield (ISIMIP relative_cropyield) hazard first.",
+        "yield",
+        "expected annual yield loss",
+    ),
+    "low_flow": (
+        "LF",
+        [0.0, 0.25, 0.5, 0.75, 1.0],
+        [0.0, 0.1, 0.3, 0.6, 1.0],
+        "deficit",
+        "historical",
+        "ingest a low-flow (GloFAS) hazard first.",
+        "productivity",
+        "expected annual low-flow impact",
+    ),
+    "heatwave": (
+        "HW",
+        [0.0, 30.0, 35.0, 40.0, 45.0],
+        [0.0, 0.0, 0.1, 0.3, 0.6],
+        "degC",
+        None,
+        "ingest a heat (ERA5-HEAT/UTCI) hazard first.",
+        "productivity",
+        "expected annual heat-productivity loss",
     ),
 }
 
@@ -721,7 +768,7 @@ def _run_catalog_peril(
     import numpy as np
     from climada.entity import ImpactFunc, ImpactFuncSet
 
-    haz_type, intens, shape, unit, scen_key, hint = _CATALOG_PERILS[peril]
+    haz_type, intens, shape, unit, scen_key, hint, result_kind, metric_unit = _CATALOG_PERILS[peril]
     scenario = scen_key or climate_scenario
     target = max(anchor_years) if anchor_years else 2050
     iso3s = _per_asset_iso3([a["lat"] for a in assets], [a["lon"] for a in assets])
@@ -771,7 +818,9 @@ def _run_catalog_peril(
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
         },
-        "detail": f"{region} {peril} (local catalog; indicative {unit} damage ramp)",
+        "result_kind": result_kind,
+        "metric_unit": metric_unit,
+        "detail": f"{region} {peril} (local catalog; indicative {unit} ramp, {result_kind})",
     }
 
 
