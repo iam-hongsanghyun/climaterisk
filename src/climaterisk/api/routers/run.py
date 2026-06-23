@@ -74,6 +74,23 @@ def submit_litpop(session_id: str, country: str, store: StoreDep, manager: Manag
     return manager.submit_litpop(portfolio, country.upper())
 
 
+@router.post("/{session_id}/supplychain", response_model=Run)
+def submit_supplychain(
+    session_id: str,
+    store: StoreDep,
+    manager: ManagerDep,
+    mriot_type: str = "WIOD16",
+    mriot_year: int = 2010,
+) -> Run:
+    """Submit a supply-chain indirect-impact run (polled via the run-status route)."""
+    portfolio = store.get(session_id)
+    if portfolio is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    if not portfolio.assets:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="portfolio has no assets")
+    return manager.submit_supplychain(portfolio, mriot_type, mriot_year)
+
+
 class IngestBody(BaseModel):
     """Request body for a data-ingest run (scenario/year default to the session)."""
 

@@ -22,6 +22,7 @@ from climaterisk.engines.base import (
     LitPopRequest,
     MeasureSpec,
     PhysicalRunRequest,
+    SupplyChainRequest,
     UncertaintyRequest,
 )
 from climaterisk.logger import get_logger
@@ -105,6 +106,17 @@ class RunManager:
         run_id = uuid.uuid4().hex
         run = self._store.create(run_id, portfolio.id, scenario, [f"ingest:{source}"])
         request = IngestRequest.from_portfolio(portfolio, source, peril, scenario, year)
+        self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
+        run.status = "running"
+        return run
+
+    def submit_supplychain(
+        self, portfolio: Portfolio, mriot_type: str = "WIOD16", mriot_year: int = 2010
+    ) -> Run:
+        """Create a supply-chain indirect-impact run and spawn its worker."""
+        run_id = uuid.uuid4().hex
+        run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["supplychain"])
+        request = SupplyChainRequest.from_portfolio(portfolio, mriot_type, mriot_year)
         self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
         run.status = "running"
         return run

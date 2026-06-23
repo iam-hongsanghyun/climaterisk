@@ -4,6 +4,7 @@ import {
   submitCostBenefit,
   submitLitPop,
   submitRun,
+  submitSupplyChain,
   submitTransition,
   submitUncertainty,
 } from "./api";
@@ -40,6 +41,10 @@ export function useResults(sessionId: string) {
   const [litpopBusy, setLitpopBusy] = useState(false);
   const [litpopErr, setLitpopErr] = useState<string | null>(null);
 
+  const [scRun, setScRun] = useState<Run | null>(null);
+  const [scBusy, setScBusy] = useState(false);
+  const [scErr, setScErr] = useState<string | null>(null);
+
   // Reset everything when the session changes.
   const sid = useRef(sessionId);
   useEffect(() => {
@@ -55,6 +60,8 @@ export function useResults(sessionId: string) {
     setUncErr(null);
     setLitpopRun(null);
     setLitpopErr(null);
+    setScRun(null);
+    setScErr(null);
   }, [sessionId]);
 
   // Poll the LitPop run while in flight.
@@ -108,6 +115,32 @@ export function useResults(sessionId: string) {
     }, 1500);
     return () => clearTimeout(t);
   }, [cbRun, sessionId]);
+
+  // Poll the supply-chain run while in flight (the MRIO fetch can take a while).
+  useEffect(() => {
+    if (!scRun || (scRun.status !== "queued" && scRun.status !== "running")) return;
+    const t = setTimeout(async () => {
+      try {
+        setScRun(await getRun(sessionId, scRun.id));
+      } catch (e) {
+        setScErr(String(e));
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [scRun, sessionId]);
+
+  const runSupplyChain = async () => {
+    setScErr(null);
+    setScBusy(true);
+    setScRun(null);
+    try {
+      setScRun(await submitSupplyChain(sessionId));
+    } catch (e) {
+      setScErr(String(e));
+    } finally {
+      setScBusy(false);
+    }
+  };
 
   const runPhysical = async () => {
     setPhysErr(null);
@@ -183,5 +216,9 @@ export function useResults(sessionId: string) {
     litpopBusy,
     litpopErr,
     runLitpop,
+    scRun,
+    scBusy,
+    scErr,
+    runSupplyChain,
   };
 }

@@ -238,6 +238,21 @@ export interface IngestResult {
   detail: string | null;
 }
 
+export interface SupplyChainSector {
+  sector: string;
+  indirect: number;
+}
+export interface SupplyChainResult {
+  status: string;
+  mriot: string;
+  currency: string;
+  total_direct: number;
+  total_indirect: number;
+  amplification: number | null;
+  by_sector: SupplyChainSector[];
+  detail: string | null;
+}
+
 export interface Run {
   id: string;
   session_id: string;
@@ -250,6 +265,7 @@ export interface Run {
     | UncertaintyResult
     | LitPopResult
     | IngestResult
+    | SupplyChainResult
     | null;
   detail: string | null;
   created_at: string;
