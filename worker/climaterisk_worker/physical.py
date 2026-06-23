@@ -17,6 +17,7 @@ Returns plain dicts matching ``climaterisk.engines.base``.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from climaterisk_worker import catalog
@@ -673,6 +674,103 @@ def _run_tc_surge(
     }
 
 
+# Catalog-first damage perils that share one shape: load a locally-ingested hazard,
+# apply an indicative per-class damage ramp (max from wf_max_mdd), report AAI. These
+# perils are not in the CLIMADA Data API, so they require ingestion first.
+#   peril -> (haz_type, intensity_breakpoints, ramp_shape (0..1), unit, scenario_key, ingest_hint)
+_CATALOG_PERILS: dict[str, Any] = {
+    "hail": (
+        "HL",
+        [0.0, 2.0, 4.0, 6.0, 8.0, 10.0],
+        [0.0, 0.0, 0.1, 0.3, 0.6, 1.0],
+        "cm",
+        None,  # use the run's climate scenario
+        "ingest a hail hazard (e.g. MeteoSwiss MESHS) to the local catalog first.",
+    ),
+    "landslide": (
+        "LS",
+        [0.0, 0.25, 0.5, 0.75, 1.0],
+        [0.0, 0.1, 0.3, 0.6, 1.0],
+        "probability",
+        "historical",
+        "ingest a landslide hazard (e.g. NASA COOLR via climada_petals) first.",
+    ),
+    "tc_rain": (
+        "TR",
+        [0.0, 50.0, 100.0, 200.0, 400.0],
+        [0.0, 0.05, 0.2, 0.5, 0.9],
+        "mm",
+        None,
+        "ingest a TC-rainfall hazard (climada_petals TCRain from generated tracks) first.",
+    ),
+}
+
+
+def _run_catalog_peril(
+    peril: str,
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generic catalog-first damage peril (indicative per-class ramp; needs ingestion)."""
+    import numpy as np
+    from climada.entity import ImpactFunc, ImpactFuncSet
+
+    haz_type, intens, shape, unit, scen_key, hint = _CATALOG_PERILS[peril]
+    scenario = scen_key or climate_scenario
+    target = max(anchor_years) if anchor_years else 2050
+    iso3s = _per_asset_iso3([a["lat"] for a in assets], [a["lon"] for a in assets])
+    iso3 = _single_country_iso3(iso3s)
+    region = iso3 or "global"
+
+    haz = catalog.load_hazard(peril, scenario, region, target)
+    if haz is None:
+        raise ValueError(f"{peril} has no local hazard for this portfolio — {hint}")
+
+    intens_arr = np.array(intens, dtype=float)
+    shape_arr = np.array(shape, dtype=float)
+    maxes = sorted({round(float(a["wf_max_mdd"]), 3) for a in assets})
+    id_by = {m: i + 1 for i, m in enumerate(maxes)}
+    impf_set = ImpactFuncSet(
+        [
+            ImpactFunc(
+                haz_type=haz_type,
+                id=fid,
+                intensity=intens_arr,
+                mdd=shape_arr * m,
+                paa=np.ones_like(intens_arr),
+                intensity_unit=unit,
+                name=f"{peril}_{fid}",
+            )
+            for m, fid in id_by.items()
+        ]
+    )
+    impf_ids = [id_by[round(float(a["wf_max_mdd"]), 3)] for a in assets]
+    exp, src_idx = _build_exposures(assets, f"impf_{haz_type}", impf_ids)
+    imp = _impact(exp, impf_set, haz)
+    eai = _eai_by_asset(imp, src_idx, len(assets))
+    fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    return {
+        "peril": peril,
+        "status": "ok",
+        "target_year": target,
+        "aai_agg": float(imp.aai_agg),
+        "present_aai_agg": None,
+        "delta_pct": None,
+        "total_value": float(sum(a["value"] for a in assets)),
+        "per_asset": [
+            {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
+            for i, a in enumerate(assets)
+        ],
+        "freq_curve": {
+            "return_periods": [float(x) for x in fc.return_per],
+            "impact": [float(x) for x in fc.impact],
+        },
+        "detail": f"{region} {peril} (local catalog; indicative {unit} damage ramp)",
+    }
+
+
 _RUNNERS = {
     "tropical_cyclone": _run_tropical_cyclone,
     "river_flood": _run_river_flood,
@@ -681,6 +779,8 @@ _RUNNERS = {
     "earthquake": _run_earthquake,
     "coastal_flood": _run_coastal_flood,
     "tc_surge": _run_tc_surge,
+    # Catalog-first damage perils (need ingestion); bound via a shared runner.
+    **{p: partial(_run_catalog_peril, p) for p in _CATALOG_PERILS},
 }
 
 
