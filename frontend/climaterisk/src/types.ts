@@ -172,6 +172,16 @@ export interface FreqCurve {
   return_periods: number[];
   impact: number[];
 }
+export interface Yearset {
+  n_years: number;
+  mean: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  max: number;
+  losses: number[];
+}
 export interface PhysicalRunResult {
   peril: string;
   status: string;
@@ -182,6 +192,7 @@ export interface PhysicalRunResult {
   total_value: number;
   per_asset: AssetImpact[];
   freq_curve: FreqCurve | null;
+  yearset?: Yearset | null;
   result_kind?: "monetary" | "yield" | "productivity";
   metric_unit?: string | null;
   detail: string | null;

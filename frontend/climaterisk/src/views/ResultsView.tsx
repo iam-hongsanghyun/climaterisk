@@ -86,6 +86,23 @@ function PhysicalResult({ result, currency }: { result: PhysicalRunResult; curre
           <FreqCurveChart curve={result.freq_curve} currency={currency} />
         </div>
       )}
+      {result.yearset && (result.result_kind ?? "monetary") === "monetary" && (
+        <div style={{ marginTop: 14 }}>
+          <div className="section-title" style={{ marginBottom: 6 }}>
+            Annual-loss distribution ({result.yearset.n_years} sampled years)
+          </div>
+          <div className="kpi-grid">
+            <Kpi label="Mean year (≈ AAI)" value={`${money(result.yearset.mean, currency)}/yr`} />
+            <Kpi label="1-in-10-yr loss" value={money(result.yearset.p90, currency)} />
+            <Kpi label="1-in-100-yr loss" value={money(result.yearset.p99, currency)} />
+            <Kpi label="Worst modeled year" value={money(result.yearset.max, currency)} />
+          </div>
+          <p className="hint" style={{ marginTop: 6 }}>
+            CLIMADA yearsets Poisson-samples events into years — the mean reproduces AAI while the
+            tail shows how bad a rare year can be (a median year is often {money(result.yearset.p50, currency)}).
+          </p>
+        </div>
+      )}
       <MethodNote>
         <strong>Probability × impact.</strong> <em>Avg Annual Impact = Σ events (frequency × damage)</em>,
         computed by CLIMADA over a probabilistic hazard event set × a per-asset vulnerability curve ×

@@ -121,6 +121,23 @@ class FreqCurve(BaseModel):
     impact: list[float]
 
 
+class Yearset(BaseModel):
+    """Sampled annual-loss distribution (CLIMADA ``util.yearsets.impact_yearset``).
+
+    ``mean`` reproduces AAI; the percentiles + ``losses`` series expose the spread
+    between a median year and a tail year.
+    """
+
+    n_years: int
+    mean: float
+    p50: float
+    p90: float
+    p95: float
+    p99: float
+    max: float
+    losses: list[float]
+
+
 class PhysicalRunResult(BaseModel):
     """Engine output for one peril within a run (future horizon, plus present-day delta)."""
 
@@ -133,6 +150,7 @@ class PhysicalRunResult(BaseModel):
     total_value: float = 0.0
     per_asset: list[AssetImpact] = Field(default_factory=list)
     freq_curve: FreqCurve | None = None
+    yearset: Yearset | None = None  # sampled annual-loss distribution (CLIMADA yearsets)
     # "monetary" (AAI in currency) | "yield" | "productivity" — non-damage perils
     # (heatwave, drought, crop yield) report a fractional/index metric, not currency.
     result_kind: str = "monetary"

@@ -150,6 +150,45 @@ def _impact(exp, impf_set, haz):  # type: ignore[no-untyped-def]
     return ImpactCalc(exp, impf_set, haz).impact(save_mat=True, assign_centroids=True)
 
 
+_YEARSET_SEED = 1789  # fixed → reproducible annual-loss sampling (CLAUDE.md: pin seeds)
+
+
+def _yearset_summary(imp, n_years: int = 100, seed: int = _YEARSET_SEED):  # type: ignore[no-untyped-def]
+    """Sample ``n_years`` of annual losses from a per-event impact (CLIMADA yearsets).
+
+    Poisson-samples events into years using the impact's event frequencies, so the mean
+    annual loss reproduces AAI while exposing the *distribution* (a bad year vs a median
+    year). Returns a summary + the sampled annual-loss series for plotting, or None when
+    the impact has no positive-loss events.
+
+    Algorithm:
+        $$L_y = \\sum_{e \\in \\text{events sampled into year } y} \\ell_e,\\quad
+          n_e \\sim \\text{Poisson}(\\lambda),\\ \\lambda = \\sum_e f_e$$
+        ASCII: annual loss = sum of event losses for events Poisson-sampled into that year.
+    """
+    import numpy as np
+    from climada.util.yearsets import impact_yearset
+
+    try:
+        at_event = np.asarray(getattr(imp, "at_event", []), dtype=float)
+        if at_event.size == 0 or float(np.nansum(at_event)) <= 0:
+            return None
+        yimp, _ = impact_yearset(imp, sampled_years=list(range(1, n_years + 1)), seed=seed)
+        losses = np.asarray(yimp.at_event, dtype=float)
+        return {
+            "n_years": int(losses.size),
+            "mean": float(losses.mean()),
+            "p50": float(np.percentile(losses, 50)),
+            "p90": float(np.percentile(losses, 90)),
+            "p95": float(np.percentile(losses, 95)),
+            "p99": float(np.percentile(losses, 99)),
+            "max": float(losses.max()),
+            "losses": [float(x) for x in losses],
+        }
+    except Exception:
+        return None
+
+
 def _run_tropical_cyclone(
     assets: list[dict[str, Any]],
     climate_scenario: str,
@@ -218,6 +257,7 @@ def _run_tropical_cyclone(
 
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(future)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
     delta = ((future_aai - present_aai) / present_aai * 100.0) if present_aai > 0 else None
@@ -234,6 +274,7 @@ def _run_tropical_cyclone(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -306,6 +347,7 @@ def _run_river_flood(
 
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(future)
     present_aai = float(present.aai_agg)
     future_aai = float(future.aai_agg)
     delta = ((future_aai - present_aai) / present_aai * 100.0) if present_aai > 0 else None
@@ -322,6 +364,7 @@ def _run_river_flood(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -376,6 +419,7 @@ def _run_wildfire(
     imp = _impact(exp, impf_set, haz)
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(imp)
     return {
         "peril": "wildfire",
         "status": "ok",
@@ -388,6 +432,7 @@ def _run_wildfire(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -444,6 +489,7 @@ def _run_european_windstorm(
 
     eai = _eai_by_asset(future, src_idx, len(assets))
     fc = future.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(future)
     future_aai = float(future.aai_agg)
     delta = (
         ((future_aai - present_aai) / present_aai * 100.0)
@@ -462,6 +508,7 @@ def _run_european_windstorm(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -504,6 +551,7 @@ def _run_earthquake(
     imp = _impact(exp, ImpactFuncSet([impf]), haz)
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(imp)
     return {
         "peril": "earthquake",
         "status": "ok",
@@ -516,6 +564,7 @@ def _run_earthquake(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -579,6 +628,7 @@ def _run_coastal_flood(
 
     eai = _eai_by_asset(fut, src_idx, len(assets))
     fc = fut.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(fut)
     future_aai = float(fut.aai_agg)
     delta = (
         ((future_aai - present_aai) / present_aai * 100.0)
@@ -597,6 +647,7 @@ def _run_coastal_flood(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -670,6 +721,7 @@ def _run_tc_surge(
     imp = _impact(exp, impf_set, surge)
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(imp)
     return {
         "peril": "tc_surge",
         "status": "ok",
@@ -682,6 +734,7 @@ def _run_tc_surge(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
@@ -814,6 +867,7 @@ def _run_catalog_peril(
     imp = _impact(exp, impf_set, haz)
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    _ys = _yearset_summary(imp)
     return {
         "peril": peril,
         "status": "ok",
@@ -826,6 +880,7 @@ def _run_catalog_peril(
             {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
             for i, a in enumerate(assets)
         ],
+        "yearset": _ys,
         "freq_curve": {
             "return_periods": [float(x) for x in fc.return_per],
             "impact": [float(x) for x in fc.impact],
