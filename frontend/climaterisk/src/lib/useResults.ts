@@ -3,6 +3,7 @@ import {
   getRun,
   submitCalibration,
   submitCostBenefit,
+  submitForecast,
   submitLitPop,
   submitRun,
   submitSupplyChain,
@@ -50,6 +51,10 @@ export function useResults(sessionId: string) {
   const [calBusy, setCalBusy] = useState(false);
   const [calErr, setCalErr] = useState<string | null>(null);
 
+  const [fcRun, setFcRun] = useState<Run | null>(null);
+  const [fcBusy, setFcBusy] = useState(false);
+  const [fcErr, setFcErr] = useState<string | null>(null);
+
   // Reset everything when the session changes.
   const sid = useRef(sessionId);
   useEffect(() => {
@@ -69,6 +74,8 @@ export function useResults(sessionId: string) {
     setScErr(null);
     setCalRun(null);
     setCalErr(null);
+    setFcRun(null);
+    setFcErr(null);
   }, [sessionId]);
 
   // Poll the LitPop run while in flight.
@@ -175,6 +182,32 @@ export function useResults(sessionId: string) {
     }
   };
 
+  // Poll the forecast run while in flight (the ECMWF fetch can take a while).
+  useEffect(() => {
+    if (!fcRun || (fcRun.status !== "queued" && fcRun.status !== "running")) return;
+    const t = setTimeout(async () => {
+      try {
+        setFcRun(await getRun(sessionId, fcRun.id));
+      } catch (e) {
+        setFcErr(String(e));
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [fcRun, sessionId]);
+
+  const runForecast = async () => {
+    setFcErr(null);
+    setFcBusy(true);
+    setFcRun(null);
+    try {
+      setFcRun(await submitForecast(sessionId));
+    } catch (e) {
+      setFcErr(String(e));
+    } finally {
+      setFcBusy(false);
+    }
+  };
+
   const runPhysical = async () => {
     setPhysErr(null);
     setPhysBusy(true);
@@ -257,5 +290,9 @@ export function useResults(sessionId: string) {
     calBusy,
     calErr,
     runCalibration,
+    fcRun,
+    fcBusy,
+    fcErr,
+    runForecast,
   };
 }

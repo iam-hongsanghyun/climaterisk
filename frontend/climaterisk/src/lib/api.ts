@@ -101,6 +101,10 @@ export async function submitCalibration(sessionId: string): Promise<Run> {
   return http<Run>(`/api/session/${sessionId}/calibration`, { method: "POST" });
 }
 
+export async function submitForecast(sessionId: string): Promise<Run> {
+  return http<Run>(`/api/session/${sessionId}/forecast`, { method: "POST" });
+}
+
 export interface IngestBody {
   source: "dataapi" | "aqueduct";
   peril?: string;

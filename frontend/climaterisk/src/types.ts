@@ -264,6 +264,15 @@ export interface CalibrationResult {
   detail: string | null;
 }
 
+export interface ForecastResult {
+  status: string;
+  peril: string;
+  n_tracks: number;
+  total_impact: number;
+  per_asset: AssetImpact[];
+  detail: string | null;
+}
+
 export interface Run {
   id: string;
   session_id: string;
@@ -278,6 +287,7 @@ export interface Run {
     | IngestResult
     | SupplyChainResult
     | CalibrationResult
+    | ForecastResult
     | null;
   detail: string | null;
   created_at: string;

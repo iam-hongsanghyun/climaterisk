@@ -8,6 +8,7 @@ import { ScenariosView } from "./views/ScenariosView";
 import { ResultsView } from "./views/ResultsView";
 import { AdaptationView } from "./views/AdaptationView";
 import { SupplyChainView } from "./views/SupplyChainView";
+import { ForecastView } from "./views/ForecastView";
 import { VulnerabilityView } from "./views/VulnerabilityView";
 import { DataView } from "./views/DataView";
 import { MethodView } from "./views/MethodView";
@@ -147,6 +148,15 @@ export function App() {
               busy={results.scBusy}
               error={results.scErr}
               onRun={results.runSupplyChain}
+            />
+          )}
+          {view === "forecast" && (
+            <ForecastView
+              model={model}
+              run={results.fcRun}
+              busy={results.fcBusy}
+              error={results.fcErr}
+              onRun={results.runForecast}
             />
           )}
           {view === "data" && <DataView model={model} libraries={libraries} />}

@@ -434,3 +434,30 @@ class CalibrationResult(BaseModel):
     calibrated: float = 0.0
     observed_annual_loss: float = 0.0
     detail: str | None = None
+
+
+# --- Operational forecast (latest ECMWF ensemble TC tracks) ---
+
+
+class ForecastRequest(BaseModel):
+    """Inputs for an operational TC-forecast run (no scenario — uses the live feed)."""
+
+    mode: str = "forecast"
+    session_id: str
+    assets: list[AssetSpec]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio) -> ForecastRequest:
+        """Build a forecast request from the session model."""
+        return cls(session_id=portfolio.id, assets=resolve_asset_specs(portfolio))
+
+
+class ForecastResult(BaseModel):
+    """Engine output for an operational TC-forecast run."""
+
+    status: str
+    peril: str = "tropical_cyclone"
+    n_tracks: int = 0
+    total_impact: float = 0.0  # ensemble-mean forecast impact over the portfolio
+    per_asset: list[AssetImpact] = Field(default_factory=list)
+    detail: str | None = None

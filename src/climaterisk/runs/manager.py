@@ -20,6 +20,7 @@ from climaterisk.core.entities import Portfolio
 from climaterisk.engines.base import (
     CalibrationRequest,
     CostBenefitRequest,
+    ForecastRequest,
     IngestRequest,
     LitPopRequest,
     MeasureSpec,
@@ -132,6 +133,15 @@ class RunManager:
         run_id = uuid.uuid4().hex
         run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["calibration"])
         request = CalibrationRequest.from_portfolio(portfolio)
+        self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
+        run.status = "running"
+        return run
+
+    def submit_forecast(self, portfolio: Portfolio) -> Run:
+        """Create an operational TC-forecast run and spawn its worker."""
+        run_id = uuid.uuid4().hex
+        run = self._store.create(run_id, portfolio.id, portfolio.scenario.climate, ["forecast"])
+        request = ForecastRequest.from_portfolio(portfolio)
         self._spawn(run_id, self._settings.runs_path / run_id, request.model_dump_json(indent=2))
         run.status = "running"
         return run

@@ -62,6 +62,10 @@ def run(run_dir: Path) -> dict[str, Any]:
                 from climaterisk_worker.calibration import compute_calibration
 
                 output = compute_calibration(request)
+            elif mode == "forecast":
+                from climaterisk_worker.forecast import compute_forecast
+
+                output = compute_forecast(request)
             else:
                 output = compute_physical_risk(request)
         except Exception as exc:

@@ -5,6 +5,7 @@ export type ViewId =
   | "results"
   | "adaptation"
   | "supplychain"
+  | "forecast"
   | "data"
   | "method";
 
@@ -15,6 +16,7 @@ const ITEMS: { id: ViewId; label: string; ico: string }[] = [
   { id: "results", label: "Results", ico: "📊" },
   { id: "adaptation", label: "Adapt", ico: "🛡️" },
   { id: "supplychain", label: "Supply", ico: "🏭" },
+  { id: "forecast", label: "Forecast", ico: "🌀" },
   { id: "data", label: "Data", ico: "🗄️" },
   { id: "method", label: "Method", ico: "📖" },
 ];
