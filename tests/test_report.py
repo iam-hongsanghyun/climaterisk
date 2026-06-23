@@ -46,3 +46,35 @@ def test_report_download(client: TestClient) -> None:
     assert "Climate Risk Report" in body
     assert "Transition risk" in body
     assert "Plant" in body
+
+
+def test_report_includes_new_engine_sections() -> None:
+    from climaterisk.core.entities import Portfolio
+    from climaterisk.report.html import build_html_report
+    from climaterisk.transition.carbon import compute_transition_risk
+
+    p = Portfolio()
+    t = compute_transition_risk(p)
+    html = build_html_report(
+        p,
+        None,
+        t,
+        supplychain={
+            "status": "ok",
+            "mriot": "WIOD16",
+            "total_direct": 100.0,
+            "total_indirect": 300.0,
+            "by_sector": [{"sector": "Real estate", "indirect": 200.0}],
+        },
+        forecast={"status": "ok", "n_tracks": 5, "total_impact": 1000.0},
+        calibration={
+            "status": "ok",
+            "country": "JPN",
+            "param": "v_half",
+            "initial": 84.7,
+            "calibrated": 70.0,
+        },
+    )
+    assert "Supply-chain (indirect impact)" in html
+    assert "Operational forecast" in html
+    assert "Impact-function calibration" in html

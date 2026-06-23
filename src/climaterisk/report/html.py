@@ -62,12 +62,55 @@ def _uncertainty_section(unc: dict[str, Any] | None, cur: str) -> str:
     )
 
 
+def _supplychain_section(sc: dict[str, Any] | None, cur: str) -> str:
+    if not sc or sc.get("status") != "ok":
+        return ""
+    rows = "".join(
+        f"<tr><td>{_esc(s.get('sector'))}</td><td class='num'>{_money(s.get('indirect', 0), cur)}</td></tr>"
+        for s in sc.get("by_sector", [])[:10]
+    )
+    return (
+        "<h2>Supply-chain (indirect impact)</h2>"
+        f"<p>Direct AAI <strong>{_money(sc.get('total_direct', 0), cur)}</strong>; "
+        f"gross indirect production change <strong>{_money(sc.get('total_indirect', 0), cur)}</strong> "
+        f"via the {_esc(sc.get('mriot'))} input-output table (Leontief).</p>"
+        "<table><thead><tr><th>Sector</th><th>Indirect</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+    )
+
+
+def _forecast_section(fc: dict[str, Any] | None, cur: str) -> str:
+    if not fc or fc.get("status") != "ok":
+        return ""
+    if not fc.get("n_tracks"):
+        return "<h2>Operational forecast</h2><p>No active TC tracks in the latest ECMWF feed.</p>"
+    return (
+        "<h2>Operational forecast</h2>"
+        f"<p>ECMWF ensemble: <strong>{fc.get('n_tracks')}</strong> tracks; "
+        f"forecast impact <strong>{_money(fc.get('total_impact', 0), cur)}</strong> over the portfolio.</p>"
+    )
+
+
+def _calibration_section(cal: dict[str, Any] | None) -> str:
+    if not cal or cal.get("status") != "ok":
+        return ""
+    return (
+        "<h2>Impact-function calibration</h2>"
+        f"<p>{_esc(cal.get('country'))} TC <code>{_esc(cal.get('param'))}</code> calibrated to "
+        f"EM-DAT losses: {round(cal.get('initial', 0), 1)} → "
+        f"<strong>{round(cal.get('calibrated', 0), 1)} m/s</strong>.</p>"
+    )
+
+
 def build_html_report(
     portfolio: Portfolio,
     run: Run | None,
     transition: TransitionResult,
     cost_benefit: dict[str, Any] | None = None,
     uncertainty: dict[str, Any] | None = None,
+    supplychain: dict[str, Any] | None = None,
+    forecast: dict[str, Any] | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> str:
     cur = portfolio.assets[0].currency if portfolio.assets else "USD"
     sector_of = {a.id: str(a.sector) for a in portfolio.assets}
@@ -197,6 +240,9 @@ def build_html_report(
 
 {_cost_benefit_section(cost_benefit, cur)}
 {_uncertainty_section(uncertainty, cur)}
+{_supplychain_section(supplychain, cur)}
+{_forecast_section(forecast, cur)}
+{_calibration_section(calibration)}
 
 <h2>Aggregation</h2>
 {by_sector}

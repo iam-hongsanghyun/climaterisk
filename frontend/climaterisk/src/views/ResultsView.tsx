@@ -157,6 +157,9 @@ export function ResultsView({
   uncErr,
   onRunUncertainty,
   cbRunId,
+  scRunId,
+  fcRunId,
+  calRunId,
 }: {
   model: Portfolio;
   run: Run | null;
@@ -169,6 +172,9 @@ export function ResultsView({
   uncErr: string | null;
   onRunUncertainty: () => void;
   cbRunId?: string;
+  scRunId?: string;
+  fcRunId?: string;
+  calRunId?: string;
 }) {
   const currency = model.assets[0]?.currency ?? "USD";
   const running = run?.status === "queued" || run?.status === "running";
@@ -178,6 +184,9 @@ export function ResultsView({
   if (run?.id) reportParams.set("run_id", run.id);
   if (cbRunId) reportParams.set("cb_run_id", cbRunId);
   if (uncRun?.id) reportParams.set("unc_run_id", uncRun.id);
+  if (scRunId) reportParams.set("sc_run_id", scRunId);
+  if (fcRunId) reportParams.set("fc_run_id", fcRunId);
+  if (calRunId) reportParams.set("cal_run_id", calRunId);
   const reportHref = `/api/session/${model.id}/report?${reportParams.toString()}`;
 
   return (

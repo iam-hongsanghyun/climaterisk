@@ -128,6 +128,9 @@ export function App() {
               uncErr={results.uncErr}
               onRunUncertainty={results.runUncertainty}
               cbRunId={results.cbRun?.id}
+              scRunId={results.scRun?.id}
+              fcRunId={results.fcRun?.id}
+              calRunId={results.calRun?.id}
             />
           )}
           {view === "adaptation" && (

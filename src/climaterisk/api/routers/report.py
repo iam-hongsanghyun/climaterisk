@@ -27,6 +27,9 @@ def download_report(
     run_id: str | None = None,
     cb_run_id: str | None = None,
     unc_run_id: str | None = None,
+    sc_run_id: str | None = None,
+    fc_run_id: str | None = None,
+    cal_run_id: str | None = None,
 ) -> HTMLResponse:
     """Return a self-contained HTML report (physical + transition, optional CB + uncertainty)."""
     portfolio = store.get(session_id)
@@ -50,6 +53,9 @@ def download_report(
         transition,
         cost_benefit=_output_for(cb_run_id),
         uncertainty=_output_for(unc_run_id),
+        supplychain=_output_for(sc_run_id),
+        forecast=_output_for(fc_run_id),
+        calibration=_output_for(cal_run_id),
     )
     filename = f"climaterisk_report_{session_id[:8]}.html"
     return HTMLResponse(
