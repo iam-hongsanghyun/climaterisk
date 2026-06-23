@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Explicit override for the worker interpreter; if unset, derived from worker_env_dir.
     worker_python: str | None = None
     max_workers: int = Field(default=2, ge=1)
+    # Optional Copernicus DEM GeoTIFF (topography) for TC storm-surge (TCSurgeBathtub).
+    # A manual drop-in; injected into the worker env as CLIMATERISK_DEM_PATH when set.
+    dem_path: str | None = None
 
     # Logging
     log_level: str = "INFO"

@@ -592,6 +592,87 @@ def _run_coastal_flood(
     }
 
 
+def _run_tc_surge(
+    assets: list[dict[str, Any]],
+    climate_scenario: str,
+    anchor_years: list[int],
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Tropical-cyclone storm surge (climada_petals ``TCSurgeBathtub``).
+
+    Derives a coastal surge-height hazard from the TC wind hazard (catalog-first, same
+    resolver as the TC runner) plus a Copernicus DEM (``CLIMATERISK_DEM_PATH``, a manual
+    drop-in). Impact uses the depth-damage curve (surge height in m). Degrades with a clear
+    error when the DEM is absent.
+    """
+    import os
+
+    # DEM check first (cheap; lets the graceful-degradation path run without CLIMADA).
+    dem = os.environ.get("CLIMATERISK_DEM_PATH")
+    if not dem or not os.path.isfile(dem):
+        raise ValueError(
+            "TC storm surge needs a Copernicus DEM GeoTIFF — drop one in and set "
+            "CLIMATERISK_DEM_PATH (Data tab → Copernicus DEM)."
+        )
+
+    import numpy as np
+    from climada.entity import ImpactFunc, ImpactFuncSet
+    from climada_petals.hazard import TCSurgeBathtub
+
+    from climaterisk_worker.cost_benefit import _tc_hazard  # TC wind resolver (catalog-first)
+
+    ref_year = _nearest(_TC_REF_YEARS, max(anchor_years) if anchor_years else _TC_REF_YEARS[0])
+    iso3s = _per_asset_iso3([a["lat"] for a in assets], [a["lon"] for a in assets])
+    iso3 = _single_country_iso3(iso3s)
+    slr = float((options or {}).get("sea_level_rise_m", 0.0))
+
+    wind = _tc_hazard(iso3, climate_scenario, ref_year)
+    surge = TCSurgeBathtub.from_tc_winds(wind, topo_path=dem, add_sea_level_rise=slr)
+    htype = surge.haz_type  # surge height (m)
+
+    curve_key = [tuple(round(float(x), 4) for x in a["flood_mdr"]) for a in assets]
+    distinct = sorted(set(curve_key))
+    id_by_curve = {c: i + 1 for i, c in enumerate(distinct)}
+    funcs = []
+    for curve, fid in id_by_curve.items():
+        depths = np.array(assets[curve_key.index(curve)]["flood_depth_m"], dtype=float)
+        funcs.append(
+            ImpactFunc(
+                haz_type=htype,
+                id=fid,
+                intensity=depths,
+                mdd=np.array(curve, dtype=float),
+                paa=np.ones_like(depths),
+                intensity_unit="m",
+                name=f"tc_surge_{fid}",
+            )
+        )
+    impf_set = ImpactFuncSet(funcs)
+    impf_ids = [id_by_curve[c] for c in curve_key]
+    exp, src_idx = _build_exposures(assets, f"impf_{htype}", impf_ids)
+    imp = _impact(exp, impf_set, surge)
+    eai = _eai_by_asset(imp, src_idx, len(assets))
+    fc = imp.calc_freq_curve(_RETURN_PERIODS)
+    return {
+        "peril": "tc_surge",
+        "status": "ok",
+        "target_year": ref_year,
+        "aai_agg": float(imp.aai_agg),
+        "present_aai_agg": None,
+        "delta_pct": None,
+        "total_value": float(sum(a["value"] for a in assets)),
+        "per_asset": [
+            {"id": a["id"], "lat": a["lat"], "lon": a["lon"], "eai": eai[i], "country": iso3s[i]}
+            for i, a in enumerate(assets)
+        ],
+        "freq_curve": {
+            "return_periods": [float(x) for x in fc.return_per],
+            "impact": [float(x) for x in fc.impact],
+        },
+        "detail": f"{iso3 or 'global'} TC surge (TCSurgeBathtub bathtub model, SLR +{slr} m)",
+    }
+
+
 _RUNNERS = {
     "tropical_cyclone": _run_tropical_cyclone,
     "river_flood": _run_river_flood,
@@ -599,6 +680,7 @@ _RUNNERS = {
     "european_windstorm": _run_european_windstorm,
     "earthquake": _run_earthquake,
     "coastal_flood": _run_coastal_flood,
+    "tc_surge": _run_tc_surge,
 }
 
 
