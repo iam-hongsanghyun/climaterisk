@@ -82,7 +82,7 @@ export interface DataSourceCategory {
   label: string;
   note?: string;
 }
-export type FetchMode = "auto" | "manual" | "needs_login" | "operational";
+export type FetchMode = "auto" | "auto-download" | "manual" | "needs_login" | "operational";
 export interface DataSourceFetch {
   mode: FetchMode;
   source?: "dataapi" | "aqueduct";
@@ -100,7 +100,19 @@ export interface DataSource {
   place_at?: string;
   required?: boolean;
   fetch?: DataSourceFetch;
+  download_url?: string;
+  dest?: string;
   notes?: string;
+}
+
+export interface OpenDataFetchResult {
+  status: "ok" | "error";
+  source?: string;
+  dest?: string;
+  path?: string;
+  bytes?: number;
+  extracted?: string[];
+  detail?: string;
 }
 export interface DataSourcesLib {
   categories: DataSourceCategory[];

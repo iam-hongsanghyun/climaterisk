@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from climaterisk.api.routers import libraries, report, run, session, transition
+from climaterisk.api.routers import data, libraries, report, run, session, transition
 from climaterisk.config import get_settings
 from climaterisk.logger import get_logger
 
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     api.include_router(transition.router)
     api.include_router(report.router)
     api.include_router(libraries.router)
+    api.include_router(data.router)
     app.include_router(api)
 
     logger.info("climaterisk API ready on %s:%d", settings.backend_host, settings.backend_port)

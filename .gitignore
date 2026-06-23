@@ -22,6 +22,8 @@ data/runs/
 # Local hazard catalog: large HDF5 binaries (machine-generated, >100MB) — rebuild
 # from real sources via scripts/build_hazard.py; never committed.
 data/hazard_db/
+# Open-data files fetched via the Data tab (Natural Earth, WorldPop, …) — re-fetchable.
+data/downloads/
 
 # Project-local CLIMADA conda env (multi-GB, machine-specific) — rebuild from
 # worker/climaterisk_worker/env_climada.yml, never committed.

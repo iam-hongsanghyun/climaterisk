@@ -5,6 +5,7 @@ import type {
   HazardCatalog,
   Libraries,
   MeasureSpec,
+  OpenDataFetchResult,
   Portfolio,
   Run,
   TransitionResult,
@@ -117,4 +118,14 @@ export async function submitIngest(sessionId: string, body: IngestBody): Promise
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+/** Download a curated open-data source by registry id into its declared destination. */
+export async function fetchOpenData(
+  sourceId: string,
+  country?: string,
+): Promise<OpenDataFetchResult> {
+  const qs = new URLSearchParams({ source_id: sourceId });
+  if (country) qs.set("country", country);
+  return http<OpenDataFetchResult>(`/api/data/fetch?${qs.toString()}`, { method: "POST" });
 }

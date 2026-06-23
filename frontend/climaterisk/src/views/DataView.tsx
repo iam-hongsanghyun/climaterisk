@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { getHazardCatalog, getRun, submitIngest } from "../lib/api";
+import { fetchOpenData, getHazardCatalog, getRun, submitIngest } from "../lib/api";
 import type {
   DataSource,
   HazardCatalog,
   IngestResult,
   Libraries,
+  OpenDataFetchResult,
   Portfolio,
   Run,
 } from "../types";
@@ -144,6 +145,96 @@ function IngestControls({
   );
 }
 
+/** Direct one-click download of a curated open file into its destination (no CLIMADA refine). */
+function DownloadControls({ source }: { source: DataSource }) {
+  const templated = (source.download_url ?? "").includes("{");
+  const [country, setCountry] = useState("");
+  const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [msg, setMsg] = useState<string | null>(null);
+  const destLabel =
+    source.dest === "climada"
+      ? "~/climada/data"
+      : source.dest === "catalog"
+        ? "hazard catalog"
+        : "data/downloads";
+
+  async function run() {
+    setStatus("running");
+    setMsg(null);
+    try {
+      const out: OpenDataFetchResult = await fetchOpenData(
+        source.id,
+        templated ? country.trim() : undefined,
+      );
+      setStatus(out.status === "ok" ? "done" : "error");
+      setMsg(out.detail ?? (out.status === "ok" ? "Downloaded." : "Download failed."));
+    } catch (e) {
+      setStatus("error");
+      setMsg(String(e));
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: "8px 10px",
+        background: "var(--surface-2, rgba(255,255,255,0.03))",
+        borderRadius: 6,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        alignItems: "center",
+      }}
+    >
+      <span className="pill" style={{ color: "var(--accent)" }}>
+        ⤓ download → {destLabel}
+      </span>
+      {templated && (
+        <label className="hint">
+          ISO3{" "}
+          <input
+            value={country}
+            onChange={(e) => setCountry(e.target.value.toUpperCase())}
+            placeholder="e.g. JPN"
+            maxLength={3}
+            style={{ width: 64, textTransform: "uppercase" }}
+          />
+        </label>
+      )}
+      <button
+        className="btn"
+        onClick={run}
+        disabled={status === "running" || (templated && country.trim().length !== 3)}
+        title={
+          templated && country.trim().length !== 3
+            ? "Enter a 3-letter ISO country code"
+            : `Download into ${destLabel}`
+        }
+      >
+        {status === "running" ? "Downloading…" : "Download here"}
+      </button>
+      {msg && (
+        <span
+          className="hint"
+          style={{
+            flexBasis: "100%",
+            color:
+              status === "error"
+                ? "var(--danger)"
+                : status === "done"
+                  ? "var(--accent)"
+                  : "var(--muted)",
+          }}
+        >
+          {status === "done" ? "✓ " : status === "error" ? "✕ " : ""}
+          {msg}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SourceRow({
   s,
   model,
@@ -156,7 +247,11 @@ function SourceRow({
   onIngested: () => void;
 }) {
   const auto = s.fetch?.mode === "auto";
-  const modeLabel = s.fetch && s.fetch.mode !== "auto" ? FETCH_LABEL[s.fetch.mode] : null;
+  const autoDownload = s.fetch?.mode === "auto-download";
+  const modeLabel =
+    s.fetch && s.fetch.mode !== "auto" && s.fetch.mode !== "auto-download"
+      ? FETCH_LABEL[s.fetch.mode]
+      : null;
   return (
     <div style={{ padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between" }}>
@@ -171,6 +266,11 @@ function SourceRow({
             {auto && (
               <span className="pill" style={{ color: "var(--accent)" }}>
                 one-click
+              </span>
+            )}
+            {autoDownload && (
+              <span className="pill" style={{ color: "var(--accent)" }}>
+                direct download
               </span>
             )}
           </div>
@@ -204,12 +304,13 @@ function SourceRow({
           rel="noopener noreferrer"
           style={{ textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}
         >
-          {auto ? "Source ↗" : "Download ↗"}
+          {auto || autoDownload ? "Source ↗" : "Download ↗"}
         </a>
       </div>
       {auto && (
         <IngestControls source={s} model={model} libraries={libraries} onIngested={onIngested} />
       )}
+      {autoDownload && <DownloadControls source={s} />}
     </div>
   );
 }
