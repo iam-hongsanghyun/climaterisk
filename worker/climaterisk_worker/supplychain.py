@@ -99,7 +99,10 @@ def compute_supplychain(request: dict[str, Any]) -> dict[str, Any]:
             shock_name="tc",
         )
         model = StaticIOModel(mriot, direct_shocks=shocks)
-        indirect = model.calc_indirect_impacts(event_ids=top_ids or None)
+        # Leontief (demand-side) indirect impacts. calc_indirect_impacts also runs Ghosh,
+        # which needs mriot.G (not computed for WIOD16) and raises IndexError — so call the
+        # Leontief solve directly.
+        indirect = model.calc_leontief(event_ids=top_ids or None)
     except Exception as exc:
         return {
             "status": "error",
@@ -112,8 +115,11 @@ def compute_supplychain(request: dict[str, Any]) -> dict[str, Any]:
     try:
         import pandas as pd
 
+        # calc_leontief returns per-sector indirect production change (sign varies); sum over
+        # events and rank by absolute magnitude.
         s = indirect.sum(axis=0) if hasattr(indirect, "sum") else pd.Series(dtype=float)
-        s = s[s > 0].sort_values(ascending=False)
+        s = s.abs().sort_values(ascending=False)
+        s = s[s > 0]
         total_indirect = float(s.sum())
         for key, val in list(s.items())[:10]:
             sector = key[-1] if isinstance(key, tuple) else str(key)
@@ -130,6 +136,7 @@ def compute_supplychain(request: dict[str, Any]) -> dict[str, Any]:
         "amplification": (total_indirect / total_direct) if total_direct > 0 else None,
         "by_sector": by_sector,
         "detail": (
-            f"{iso3 or 'multi'} TC direct → {mriot_type} Leontief indirect (horizon {ref_year})"
+            f"{iso3 or 'multi'} TC direct → {mriot_type} Leontief gross indirect production "
+            f"change across sectors (horizon {ref_year})"
         ),
     }
