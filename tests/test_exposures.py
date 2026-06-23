@@ -38,10 +38,11 @@ def test_unknown_source_degrades() -> None:
     assert "unknown exposure source" in exc.value.detail
 
 
-@pytest.mark.parametrize("source", ["crop", "osm"])
+@pytest.mark.parametrize("source", ["crop", "osm", "raster"])
 def test_file_gated_sources_fast_fail_with_actionable_help(source: str) -> None:
     # These need an explicit local data file we cannot synthesise, so they must fail
-    # fast with the actionable message — without importing CLIMADA.
+    # fast with the actionable message — without importing CLIMADA. ("raster" fast-fails
+    # only when no GeoTIFF is on disk for the country, which holds in the test env.)
     with pytest.raises(ExposureUnavailable) as exc:
         build_exposure(source, "JPN")
     assert exc.value.source == source

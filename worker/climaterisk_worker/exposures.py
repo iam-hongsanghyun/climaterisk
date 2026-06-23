@@ -20,6 +20,7 @@ help text testable) without the worker env.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 # Actionable "where to get the data" help per source. Kept climada-free at module level
@@ -50,6 +51,11 @@ EXPOSURE_HELP: dict[str, str] = {
         ".osm.pbf from https://download.geofabrik.de/ (open, no login) into "
         "~/climada/data/osm/, then re-run. Large countries can be multi-GB."
     ),
+    "raster": (
+        "No population/value raster found for this country. Use the Data tab to download "
+        "WorldPop 1 km population for the portfolio's country (it lands in ~/climada/data), "
+        "or drop a GeoTIFF there and set CLIMATERISK_EXPOSURE_RASTER, then re-run."
+    ),
 }
 
 # Display metadata for the UI / result payloads.
@@ -59,7 +65,31 @@ EXPOSURE_SOURCES: dict[str, dict[str, str]] = {
     "gdp": {"label": "GDP2Asset (gridded GDP)", "engine": "petals.GDP2Asset"},
     "crop": {"label": "Crop production (ISIMIP/SPAM)", "engine": "petals.CropProduction"},
     "osm": {"label": "OSM buildings (osm-flex)", "engine": "petals.openstreetmap"},
+    "raster": {
+        "label": "Population/value raster (WorldPop/GHSL)",
+        "engine": "climada.Exposures.from_raster",
+    },
 }
+
+_HOME_CLIMADA = Path.home() / "climada" / "data"
+
+
+def _resolve_exposure_raster(country: str) -> Path | None:
+    """Find a population/value GeoTIFF for the modeled-exposure 'raster' source.
+
+    Resolution order: explicit ``CLIMATERISK_EXPOSURE_RASTER`` env path → the WorldPop
+    1 km file the Data tab downloads (``<iso3>_ppp_2020_1km_Aggregated.tif``) under
+    ~/climada/data. Returns None if nothing is present (caller degrades gracefully).
+    """
+    import os
+
+    explicit = os.environ.get("CLIMATERISK_EXPOSURE_RASTER")
+    if explicit and Path(explicit).is_file():
+        return Path(explicit)
+    worldpop = _HOME_CLIMADA / f"{country.lower()}_ppp_2020_1km_Aggregated.tif"
+    if worldpop.is_file():
+        return worldpop
+    return None
 
 
 class ExposureUnavailable(Exception):
@@ -110,6 +140,13 @@ def build_exposure(source: str, country: str, res_arcsec: int = 300) -> Any:
             exp = GDP2Asset()
             exp.set_countries(countries=[country], res_arcsec=res_arcsec)
             return exp
+        if source == "raster":
+            raster = _resolve_exposure_raster(country)
+            if raster is None:
+                raise ExposureUnavailable("raster")  # actionable: no raster on disk
+            from climada.entity import Exposures
+
+            return Exposures.from_raster(str(raster))
     except ExposureUnavailable:
         raise
     except (FileNotFoundError, OSError) as exc:

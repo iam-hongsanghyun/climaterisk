@@ -155,6 +155,7 @@ export function MapView({
                   <option value="gdp">GDP2Asset (gridded GDP)</option>
                   <option value="crop">Crop production (ISIMIP/SPAM)</option>
                   <option value="osm">OSM buildings (osm-flex)</option>
+                  <option value="raster">Population raster (WorldPop/GHSL)</option>
                 </select>
                 <input
                   className="field-inline"
