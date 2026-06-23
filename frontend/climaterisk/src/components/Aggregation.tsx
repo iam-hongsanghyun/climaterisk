@@ -106,13 +106,40 @@ export function Aggregation({
   const byCountry = groupBy((id) => country.get(id) ?? "—");
   const hasCountry = byCountry.some((r) => r.key !== "—");
 
+  const totalValue = model.assets.reduce((s, a) => s + a.value, 0);
+  const totalPhys = [...phys.values()].reduce((s, v) => s + v, 0);
+  const totalTrans = [...trans.values()].reduce((s, v) => s + v, 0);
+  const nCountries = byCountry.filter((r) => r.key !== "—").length;
+
   return (
     <div className="card">
-      <div className="section-title">Portfolio aggregation</div>
+      <div className="section-title">
+        {model.depth_level === "national" ? "National" : "Portfolio"} aggregation
+      </div>
       <p className="hint">
         Physical AAI summed across perils and transition NPV, grouped by sector
         {hasCountry ? " and country (national view)" : ""}.
       </p>
+      <div className="kpi-grid" style={{ marginTop: 10 }}>
+        <div className="kpi">
+          <div className="kpi-value">{money(totalValue, currency)}</div>
+          <div className="kpi-label">Total exposed value</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-value">{money(totalPhys, currency)}/yr</div>
+          <div className="kpi-label">Physical AAI ({model.assets.length} assets)</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-value">{money(totalTrans, currency)}</div>
+          <div className="kpi-label">Transition NPV{nCountries > 1 ? ` · ${nCountries} countries` : ""}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-value">
+            {((totalPhys / Math.max(totalValue, 1)) * 100).toFixed(2)}%
+          </div>
+          <div className="kpi-label">AAI / value</div>
+        </div>
+      </div>
       <GroupTable title="By sector" rows={bySector} currency={currency} />
       {hasCountry && <GroupTable title="By country" rows={byCountry} currency={currency} />}
     </div>
