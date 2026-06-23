@@ -38,6 +38,8 @@ class AssetSpec(BaseModel):
     wf_max_mdd: float  # wildfire: max mean damage ratio above the fire-intensity threshold
     flood_depth_m: list[float]  # flood depth-damage: depths (m), shared by river + coastal flood
     flood_mdr: list[float]  # flood depth-damage: mean damage ratio at each depth
+    eq_mmi: list[float]  # earthquake: Modified Mercalli Intensity breakpoints (shared)
+    eq_mdr: list[float]  # earthquake: mean damage ratio at each MMI breakpoint
     geometry: dict[str, Any] | None = None  # GeoJSON footprint; runners disaggregate to points
 
 
@@ -46,6 +48,7 @@ def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
     libs = load_libraries()
     classes = {c["id"]: c for c in libs["impact_functions"]["classes"]}
     flood_depth_m = list(libs["impact_functions"]["flood_depth_m"])
+    eq_mmi = list(libs["impact_functions"]["eq_mmi"])
     sector_default = {s["id"]: s["default_vulnerability_class"] for s in libs["sectors"]["sectors"]}
     fallback = libs["impact_functions"]["classes"][0]
 
@@ -60,6 +63,7 @@ def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
         )
         wf = float(ov.wf_max_mdd) if ov and ov.wf_max_mdd is not None else float(vc["wf_max_mdd"])
         fmdr = [float(x) for x in (ov.flood_mdr if ov and ov.flood_mdr else vc["flood_mdr"])]
+        emdr = [float(x) for x in (ov.eq_mdr if ov and ov.eq_mdr else vc["eq_mdr"])]
         specs.append(
             AssetSpec(
                 id=a.id,
@@ -74,6 +78,8 @@ def resolve_asset_specs(portfolio: Portfolio) -> list[AssetSpec]:
                 wf_max_mdd=wf,
                 flood_depth_m=flood_depth_m,
                 flood_mdr=fmdr,
+                eq_mmi=eq_mmi,
+                eq_mdr=emdr,
                 geometry=a.geometry,
             )
         )

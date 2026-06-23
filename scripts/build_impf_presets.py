@@ -30,6 +30,17 @@ import numpy as np
 FLOOD_DEPTHS_M = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
 TC_V_THRESH_MS = 25.7  # Emanuel (2011) threshold used by the calibrated regional set.
 
+# Earthquake MMI breakpoints must match impact_functions.json "eq_mmi". CLIMADA ships no
+# earthquake impf, so these are indicative MMI mean-damage-ratio curves ordered by seismic
+# robustness (EMS-98 / HAZUS-style vulnerability classes) — NOT a single published library.
+EQ_MMI = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+EQ_CLASSES = {
+    "urm": ("Unreinforced masonry (high vuln.)", [0.0, 0.08, 0.25, 0.55, 0.85, 1.0]),
+    "rc_frame": ("Reinforced-concrete frame (medium)", [0.0, 0.02, 0.08, 0.25, 0.50, 0.80]),
+    "wood_frame": ("Wood frame (ductile)", [0.0, 0.02, 0.06, 0.18, 0.40, 0.70]),
+    "modern_code": ("Modern seismic code (low vuln.)", [0.0, 0.01, 0.03, 0.10, 0.25, 0.55]),
+}
+
 # Eberenz et al. (2021) region codes → human labels.
 TC_REGION_LABELS = {
     "NA1": "Caribbean & Mexico",
@@ -103,19 +114,34 @@ def _flood_presets() -> list[dict[str, Any]]:
     return presets
 
 
+def _eq_presets() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": f"eq_{key}",
+            "peril": "eq",
+            "label": f"EQ — {label}",
+            "eq_mdr": mdr,
+            "provenance": "Indicative MMI damage by construction class (EMS-98/HAZUS ordering)",
+        }
+        for key, (label, mdr) in EQ_CLASSES.items()
+    ]
+
+
 def build() -> dict[str, Any]:
-    """Build the presets payload (TC + flood)."""
+    """Build the presets payload (TC + flood + earthquake)."""
     return {
         "_meta": {
             "description": (
-                "Authentic published impact-function presets the Vulnerability studio applies "
-                "with one click. TC presets set tc_v_half (Emanuel form, v_thresh=25.7 m/s); "
-                "flood presets set flood_mdr at the standard depth breakpoints."
+                "Impact-function presets the Vulnerability studio applies with one click. "
+                "TC sets tc_v_half (Emanuel form, v_thresh=25.7 m/s, Eberenz 2021 regional); "
+                "flood sets flood_mdr (Huizinga/JRC); earthquake sets eq_mdr (indicative "
+                "construction-class MMI curves — CLIMADA ships no earthquake impf)."
             ),
             "flood_depth_m": FLOOD_DEPTHS_M,
+            "eq_mmi": EQ_MMI,
             "generator": "scripts/build_impf_presets.py (run in the CLIMADA worker env)",
         },
-        "presets": _tc_presets() + _flood_presets(),
+        "presets": _tc_presets() + _flood_presets() + _eq_presets(),
     }
 
 

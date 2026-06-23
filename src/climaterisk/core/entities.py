@@ -77,6 +77,7 @@ class VulnerabilityOverride(BaseModel):
     tc_v_half: float | None = Field(default=None, gt=0.0)
     wf_max_mdd: float | None = Field(default=None, ge=0.0, le=1.0)
     flood_mdr: list[float] | None = None
+    eq_mdr: list[float] | None = None  # earthquake: mean damage ratio at each MMI breakpoint
 
 
 class Portfolio(BaseModel):

@@ -37,6 +37,7 @@ export interface VulnerabilityOverride {
   tc_v_half?: number;
   wf_max_mdd?: number;
   flood_mdr?: number[];
+  eq_mdr?: number[];
 }
 
 export interface Portfolio {
@@ -75,6 +76,7 @@ export interface VulnerabilityClass {
   tc_v_half: number;
   wf_max_mdd: number;
   flood_mdr: number[];
+  eq_mdr: number[];
 }
 
 export interface DataSourceCategory {
@@ -122,10 +124,11 @@ export interface DataSourcesLib {
 
 export interface ImpfPreset {
   id: string;
-  peril: "tc" | "flood";
+  peril: "tc" | "flood" | "eq";
   label: string;
   tc_v_half?: number;
   flood_mdr?: number[];
+  eq_mdr?: number[];
   provenance: string;
 }
 
@@ -137,7 +140,7 @@ export interface Libraries {
     transition: ScenarioOption[];
     anchor_years: number[];
   };
-  impact_functions: { classes: VulnerabilityClass[]; flood_depth_m: number[] };
+  impact_functions: { classes: VulnerabilityClass[]; flood_depth_m: number[]; eq_mmi: number[] };
   impf_presets?: { presets: ImpfPreset[] };
   carbon_prices?: { prices: Record<string, Record<string, number>> };
   data_sources: DataSourcesLib;

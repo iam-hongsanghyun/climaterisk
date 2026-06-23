@@ -582,18 +582,28 @@ def _run_earthquake(
     eq_props = {"spatial_coverage": "country", "country_iso3alpha": iso3, "event_type": "observed"}
     haz = cat_haz or resilient_get_hazard(Client(), "earthquake", properties=eq_props)
     htype = haz.haz_type  # "EQ"; intensity is Modified Mercalli Intensity (MMI)
-    # Indicative MMI damage function (rises from ~MMI 5 to total by ~MMI 10).
-    impf = ImpactFunc(
-        haz_type=htype,
-        id=1,
-        intensity=np.array([0, 5, 6, 7, 8, 9, 10, 12], dtype=float),
-        mdd=np.array([0, 0, 0.02, 0.08, 0.25, 0.5, 0.8, 1.0], dtype=float),
-        paa=np.ones(8),
-        intensity_unit="MMI",
-        name="earthquake_mmi",
+    # Per-class MMI damage function: shared eq_mmi breakpoints, per-asset eq_mdr curve
+    # (resolved from the vulnerability class / studio override / EQ preset).
+    mmi = np.array(assets[0]["eq_mmi"], dtype=float)
+    curve_key = [tuple(round(float(x), 4) for x in a["eq_mdr"]) for a in assets]
+    id_by = {c: i + 1 for i, c in enumerate(sorted(set(curve_key)))}
+    impf_set = ImpactFuncSet(
+        [
+            ImpactFunc(
+                haz_type=htype,
+                id=fid,
+                intensity=mmi,
+                mdd=np.array(c, dtype=float),
+                paa=np.ones_like(mmi),
+                intensity_unit="MMI",
+                name=f"earthquake_{fid}",
+            )
+            for c, fid in id_by.items()
+        ]
     )
-    exp, src_idx = _build_exposures(assets, f"impf_{htype}", [1] * len(assets))
-    imp = _impact(exp, ImpactFuncSet([impf]), haz)
+    impf_ids = [id_by[c] for c in curve_key]
+    exp, src_idx = _build_exposures(assets, f"impf_{htype}", impf_ids)
+    imp = _impact(exp, impf_set, haz)
     eai = _eai_by_asset(imp, src_idx, len(assets))
     fc = imp.calc_freq_curve(_RETURN_PERIODS)
     _ys = _yearset_summary(imp)

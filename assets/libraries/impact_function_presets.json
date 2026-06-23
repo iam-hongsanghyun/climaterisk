@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Authentic published impact-function presets the Vulnerability studio applies with one click. TC presets set tc_v_half (Emanuel form, v_thresh=25.7 m/s); flood presets set flood_mdr at the standard depth breakpoints.",
+    "description": "Impact-function presets the Vulnerability studio applies with one click. TC sets tc_v_half (Emanuel form, v_thresh=25.7 m/s, Eberenz 2021 regional); flood sets flood_mdr (Huizinga/JRC); earthquake sets eq_mdr (indicative construction-class MMI curves \u2014 CLIMADA ships no earthquake impf).",
     "flood_depth_m": [
       0.0,
       0.5,
@@ -10,6 +10,14 @@
       4.0,
       5.0,
       6.0
+    ],
+    "eq_mmi": [
+      5.0,
+      6.0,
+      7.0,
+      8.0,
+      9.0,
+      10.0
     ],
     "generator": "scripts/build_impf_presets.py (run in the CLIMADA worker env)"
   },
@@ -186,6 +194,62 @@
         1.0
       ],
       "provenance": "Huizinga et al. (2017) JRC global depth-damage, residential"
+    },
+    {
+      "id": "eq_urm",
+      "peril": "eq",
+      "label": "EQ \u2014 Unreinforced masonry (high vuln.)",
+      "eq_mdr": [
+        0.0,
+        0.08,
+        0.25,
+        0.55,
+        0.85,
+        1.0
+      ],
+      "provenance": "Indicative MMI damage by construction class (EMS-98/HAZUS ordering)"
+    },
+    {
+      "id": "eq_rc_frame",
+      "peril": "eq",
+      "label": "EQ \u2014 Reinforced-concrete frame (medium)",
+      "eq_mdr": [
+        0.0,
+        0.02,
+        0.08,
+        0.25,
+        0.5,
+        0.8
+      ],
+      "provenance": "Indicative MMI damage by construction class (EMS-98/HAZUS ordering)"
+    },
+    {
+      "id": "eq_wood_frame",
+      "peril": "eq",
+      "label": "EQ \u2014 Wood frame (ductile)",
+      "eq_mdr": [
+        0.0,
+        0.02,
+        0.06,
+        0.18,
+        0.4,
+        0.7
+      ],
+      "provenance": "Indicative MMI damage by construction class (EMS-98/HAZUS ordering)"
+    },
+    {
+      "id": "eq_modern_code",
+      "peril": "eq",
+      "label": "EQ \u2014 Modern seismic code (low vuln.)",
+      "eq_mdr": [
+        0.0,
+        0.01,
+        0.03,
+        0.1,
+        0.25,
+        0.55
+      ],
+      "provenance": "Indicative MMI damage by construction class (EMS-98/HAZUS ordering)"
     }
   ]
 }
