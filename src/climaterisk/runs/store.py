@@ -108,6 +108,20 @@ class RunStore:
             row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return self._row_to_run(row) if row else None
 
+    def fail_stale_runs(self, detail: str) -> int:
+        """Mark any run still ``queued``/``running`` as ``error`` (called on backend start).
+
+        Their worker subprocesses were children of a previous backend process and are gone,
+        so without this they would be polled as "running" forever. Returns the count failed.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE runs SET status = 'error', detail = ?, updated_at = ? "
+                "WHERE status IN ('queued', 'running')",
+                (detail, _now_iso()),
+            )
+            return int(cur.rowcount)
+
     def update(
         self,
         run_id: str,

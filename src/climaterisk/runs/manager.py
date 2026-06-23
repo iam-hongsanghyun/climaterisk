@@ -46,6 +46,13 @@ class RunManager:
         self._store = store
         self._procs: dict[str, subprocess.Popen[bytes]] = {}
         self._started: dict[str, float] = {}  # run_id -> monotonic spawn time
+        # On (re)start the previous process's worker subprocesses are gone, so any run
+        # left "running" is orphaned — fail it now rather than poll it forever.
+        stale = store.fail_stale_runs(
+            "interrupted — the backend restarted while this run was in flight; please re-run."
+        )
+        if stale:
+            logger.warning("marked %d orphaned run(s) as error on startup", stale)
 
     def _active_count(self) -> int:
         """Number of worker subprocesses still running (poll() is None)."""

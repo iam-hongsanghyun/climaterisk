@@ -47,7 +47,11 @@ else
 fi
 
 echo "▶ backend  → http://${BACKEND_HOST}:${BACKEND_PORT}"
-uv run uvicorn climaterisk.api.main:app --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" --reload &
+# --reload-dir src: watch ONLY backend source. Watching the repo root makes uvicorn
+# reload on every SQLite-WAL write under data/ (one per status poll), which orphans
+# in-flight worker subprocesses and leaves runs stuck polling "running" forever.
+uv run uvicorn climaterisk.api.main:app --host "${BACKEND_HOST}" --port "${BACKEND_PORT}" \
+  --reload --reload-dir src &
 
 echo "▶ frontend → http://${FRONTEND_HOST}:${FRONTEND_PORT}"
 ( cd "${FRONTEND_DIR}" && npm run dev -- --port "${FRONTEND_PORT}" ) &

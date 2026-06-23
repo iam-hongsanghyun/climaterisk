@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     worker_module: str = "climaterisk_worker.run_job"
     # Explicit override for the worker interpreter; if unset, derived from worker_env_dir.
     worker_python: str | None = None
-    max_workers: int = Field(default=2, ge=1)
+    # Ceiling on concurrent worker subprocesses. CLIMADA runs are slow (each fetches
+    # hazard data over ~a minute), so a single analyst routinely has several engines in
+    # flight at once — keep this high enough that interactive use never hits it; it only
+    # guards against a runaway script. The max_run_seconds cap reaps any stuck run.
+    max_workers: int = Field(default=8, ge=1)
     # Wall-clock cap per worker run; exceeded runs are killed and reported as timed out
     # (guards against intractable jobs, e.g. a full-MRIO supply-chain solve).
     max_run_seconds: int = Field(default=900, ge=30)
