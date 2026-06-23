@@ -28,18 +28,29 @@ function PhysicalResult({ result, currency }: { result: PhysicalRunResult; curre
     return (
       <div className="card">
         <div className="section-title">{title}</div>
-        <p className="hint">
-          <span className="pill">{result.status}</span> {result.detail}
-        </p>
+        <div className="status-box error" style={{ marginTop: 6 }}>
+          {result.interpretation ?? result.detail ?? result.status}
+        </div>
       </div>
     );
   }
+  const zero = !result.aai_agg;
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <div className="section-title">Physical · {title}</div>
         <span className="pill">horizon {result.target_year}</span>
       </div>
+      {result.interpretation &&
+        (zero ? (
+          <div className="status-box info" style={{ marginTop: 6 }}>
+            {result.interpretation}
+          </div>
+        ) : (
+          <p className="hint" style={{ marginTop: 6 }}>
+            {result.interpretation}
+          </p>
+        ))}
       <div className="kpi-grid">
         <Kpi
           label={

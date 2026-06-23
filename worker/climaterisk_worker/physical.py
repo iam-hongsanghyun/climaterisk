@@ -967,6 +967,34 @@ _RUNNERS = {
 }
 
 
+def _interpret_result(r: dict[str, Any]) -> str:
+    """Plain-language meaning of a peril result — so a 0 (or error) is never ambiguous.
+
+    Distinguishes: no hazard data / not implemented (error), asset outside the hazard
+    footprint (0 + no warning bands), hazard present but below the damage threshold
+    (0 + warning bands), and a genuine modeled loss (>0).
+    """
+    status = r.get("status")
+    if status == "error":
+        return f"Not computed — {(r.get('detail') or 'run failed').rstrip('.')}."
+    if status == "engine_not_ready":
+        return f"Not available — {(r.get('detail') or 'engine not implemented').rstrip('.')}."
+    kind = r.get("result_kind", "monetary")
+    aai = float(r.get("aai_agg", 0.0) or 0.0)
+    metric = r.get("metric_unit") or ("expected annual loss" if kind == "monetary" else kind)
+    if aai > 0:
+        return f"Modeled {metric}: the hazard reaches your assets and produces a non-zero impact."
+    if not r.get("warn_levels"):
+        return (
+            "Zero — your assets fall OUTSIDE this hazard's modeled footprint (no hazard "
+            "intensity at their locations). Not the same as 'no data': the hazard ran."
+        )
+    return (
+        "Zero — the hazard does reach your assets, but its intensity stays BELOW the "
+        "damage threshold of the vulnerability curve (no expected loss)."
+    )
+
+
 def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
     """Run the physical-risk engine for each requested peril.
 
@@ -1002,6 +1030,9 @@ def compute_physical_risk(request: dict[str, Any]) -> dict[str, Any]:
                 {"peril": peril, "status": "error", "detail": f"{type(exc).__name__}: {exc}"}
             )
             print(f"[{i}/{len(perils)}] peril '{peril}' → error: {exc}", flush=True)
+
+    for r in results:  # plain-language meaning per peril (disambiguates every 0 / error)
+        r["interpretation"] = _interpret_result(r)
 
     ok = [r for r in results if r["status"] == "ok"]
     if ok and len(ok) == len(results):

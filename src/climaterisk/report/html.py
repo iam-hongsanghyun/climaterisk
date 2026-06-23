@@ -149,10 +149,11 @@ def build_html_report(
     # --- physical peril rows ---
     phys_rows = ""
     for r in peril_results:
+        interp = r.get("interpretation") or r.get("detail") or ""
         if r.get("status") != "ok":
             phys_rows += (
                 f"<tr><td>{_esc(r['peril'].replace('_', ' '))}</td>"
-                f"<td colspan='4'>{_esc(r.get('status'))} — {_esc(r.get('detail'))}</td></tr>"
+                f"<td colspan='4'>{_esc(interp)}</td></tr>"
             )
             continue
         delta = r.get("delta_pct")
@@ -165,6 +166,11 @@ def build_html_report(
             f"<td class='num'>{_money(r['aai_agg'], cur)}</td>"
             f"<td class='num'>{delta_s}</td></tr>"
         )
+        if interp:  # plain-language meaning beneath the row (esp. when AAI is 0)
+            phys_rows += (
+                f"<tr><td></td><td colspan='4' style='color:#8b98a5;font-size:12px'>"
+                f"{_esc(interp)}</td></tr>"
+            )
 
     def agg_table(title: str, rows, key_label: str) -> str:  # type: ignore[no-untyped-def]
         body = "".join(

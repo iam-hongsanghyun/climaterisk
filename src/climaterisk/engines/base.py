@@ -174,6 +174,7 @@ class PhysicalRunResult(BaseModel):
     # (heatwave, drought, crop yield) report a fractional/index metric, not currency.
     result_kind: str = "monetary"
     metric_unit: str | None = None  # label for non-monetary metrics (e.g. "% yield loss")
+    interpretation: str | None = None  # plain-language meaning (disambiguates a 0 / error)
     detail: str | None = None
 
 

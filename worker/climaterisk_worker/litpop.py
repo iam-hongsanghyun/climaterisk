@@ -59,7 +59,7 @@ def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
     import numpy as np
 
     from climaterisk_worker.exposures import EXPOSURE_SOURCES, ExposureUnavailable, build_exposure
-    from climaterisk_worker.physical import _RUNNERS
+    from climaterisk_worker.physical import _RUNNERS, _interpret_result
 
     country = request.get("country")
     if not country:
@@ -105,6 +105,7 @@ def compute_litpop_exposure(request: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "status": "ok",
+        "interpretation": _interpret_result(res),
         "country": country,
         "exposure_source": source,
         "source_label": source_label,

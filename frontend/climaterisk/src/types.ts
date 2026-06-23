@@ -205,6 +205,7 @@ export interface PhysicalRunResult {
   warn_levels?: WarnLevels | null;
   result_kind?: "monetary" | "yield" | "productivity";
   metric_unit?: string | null;
+  interpretation?: string | null;
   detail: string | null;
 }
 export interface PhysicalRunOutput {
@@ -266,6 +267,7 @@ export interface UncertaintyResult {
 // LitPop modeled exposure (mirror of engines/base.py + worker/litpop.py).
 export interface LitPopResult {
   status: string;
+  interpretation?: string | null;
   country: string;
   exposure_source?: string;
   source_label?: string;

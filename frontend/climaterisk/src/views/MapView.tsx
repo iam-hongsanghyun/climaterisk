@@ -203,13 +203,20 @@ export function MapView({
                 <div className="status-box error" style={{ marginTop: 8 }}>{litpop.detail}</div>
               )}
               {litpop && litpop.status === "ok" && (
-                <p className="hint" style={{ marginTop: 8 }}>
-                  {litpop.source_label ?? "LitPop"} · {litpop.country}:{" "}
-                  {litpop.n_points.toLocaleString()} cells · exposed{" "}
-                  {money(litpop.total_value, litpop.currency)} · AAI{" "}
-                  {money(litpop.aai_agg, litpop.currency)}/yr ({litpop.peril.replace(/_/g, " ")}
-                  {litpop.future_year ? ` ${litpop.future_year}` : ""})
-                </p>
+                <>
+                  <p className="hint" style={{ marginTop: 8 }}>
+                    {litpop.source_label ?? "LitPop"} · {litpop.country}:{" "}
+                    {litpop.n_points.toLocaleString()} cells · exposed{" "}
+                    {money(litpop.total_value, litpop.currency)} · AAI{" "}
+                    {money(litpop.aai_agg, litpop.currency)}/yr ({litpop.peril.replace(/_/g, " ")}
+                    {litpop.future_year ? ` ${litpop.future_year}` : ""})
+                  </p>
+                  {!litpop.aai_agg && litpop.interpretation && (
+                    <div className="status-box info" style={{ marginTop: 6 }}>
+                      {litpop.interpretation}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>
