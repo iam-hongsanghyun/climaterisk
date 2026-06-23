@@ -153,7 +153,8 @@ class RunManager:
         if proc.poll() is None:
             # Kill runs that exceed the wall-clock cap (intractable jobs).
             started = self._started.get(run_id)
-            if started is not None and (time.monotonic() - started) > self._settings.max_run_seconds:
+            elapsed = (time.monotonic() - started) if started is not None else 0.0
+            if elapsed > self._settings.max_run_seconds:
                 proc.kill()
                 self._procs.pop(run_id, None)
                 self._started.pop(run_id, None)
