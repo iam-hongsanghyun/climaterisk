@@ -40,7 +40,8 @@ export interface FinancialProfile {
   risk_free_rate?: number | null;
   baseline_spread_bps?: number | null;
   baseline_equity_rate?: number | null;
-  rating_method?: string | null; // id from finance_reference.rating_methods, or "custom"
+  rating_method?: string | null; // single/primary id (back-compat)
+  rating_methods?: string[] | null; // selected ids to compare; first is primary
   custom_rating_thresholds?: RatingThreshold[] | null;
 }
 export interface RunConfig {
@@ -71,6 +72,13 @@ export interface FinanceAssetResult extends FinanceScenario {
   id: string;
   name: string;
 }
+export interface FinanceMethodComparison {
+  method: string;
+  label: string;
+  code: string;
+  source: string;
+  scenario: FinanceScenario;
+}
 export interface FinanceResult {
   currency: string;
   total_physical_aai: number;
@@ -79,6 +87,7 @@ export interface FinanceResult {
   rating_method_label: string;
   rating_method_source: string;
   rating_thresholds: RatingThreshold[];
+  methods_compared: FinanceMethodComparison[];
   portfolio: FinanceScenario;
   per_asset: FinanceAssetResult[];
   detail: string;
@@ -199,7 +208,14 @@ export interface Libraries {
     default_rating_method?: string;
     rating_methods?: Record<
       string,
-      { label: string; short?: string; source: string; note?: string; thresholds: RatingThreshold[] }
+      {
+        label: string;
+        short?: string;
+        code?: string;
+        source: string;
+        note?: string;
+        thresholds: RatingThreshold[];
+      }
     >;
     rating_spreads_bps: { rating: string; spread_bps: number; source: string }[];
     financing_defaults: Record<string, { value: number; source: string }>;

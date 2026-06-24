@@ -54,12 +54,12 @@ export function FinanceView({
   const setProfile = (patch: Partial<FinancialProfile>) =>
     patchModel({ run_config: { ...model.run_config, financial_profile: { ...profile, ...patch } } });
 
-  // DSCR→rating methodology. All methods are shown side-by-side; the user selects which one
-  // drives the assessment, and can edit the Custom column to build their own grid.
+  // DSCR→rating methodology. Every grid is shown side-by-side as a compact comparison keyed by
+  // a short code (explained in the legend below); the user ticks one or more "house views" to
+  // compare, and can edit the Custom column to build their own grid.
   const fr = libraries.finance_reference;
   const methods = fr?.rating_methods ?? {};
   const defaultMethodId = fr?.default_rating_method ?? "moodys_sp";
-  const methodId = profile.rating_method ?? defaultMethodId;
   const defaultThresholds = methods[defaultMethodId]?.thresholds ?? [];
   // Rating ladder (row order), top grade first.
   const ratingScale: string[] =
@@ -69,50 +69,56 @@ export function FinanceView({
     Object.fromEntries(ths.map((t) => [t.rating, t.dscr_min]));
   const customThresholds = profile.custom_rating_thresholds ?? defaultThresholds;
 
-  // Compact column headers; falls back to a derived short label if the library predates the
-  // `short` field (e.g. a backend still serving a cached finance_reference).
-  const SHORT_FALLBACK: Record<string, string> = {
-    moodys_sp: "Moody's / S&P",
-    lender_conservative: "Lender (conservative)",
-    equity_lenient: "Sponsor (lenient)",
+  // Ultra-short codes + full names; fall back when the library predates these fields
+  // (e.g. a backend still serving a cached finance_reference).
+  const CODE_FALLBACK: Record<string, string> = {
+    moodys_sp: "Agency",
+    lender_conservative: "Lender",
+    equity_lenient: "Sponsor",
+  };
+  const FULL_FALLBACK: Record<string, string> = {
+    moodys_sp: "Moody's / S&P (infrastructure & project finance)",
+    lender_conservative: "Lender / banking case (conservative)",
+    equity_lenient: "Sponsor / equity case (lenient)",
   };
 
   // Columns: every named method, then the editable Custom grid.
   const columns = [
     ...Object.entries(methods).map(([id, m]) => ({
       id,
-      label: m.short ?? SHORT_FALLBACK[id] ?? m.label,
-      title: m.label,
+      code: m.code ?? CODE_FALLBACK[id] ?? m.short ?? m.label,
+      label: m.label ?? FULL_FALLBACK[id] ?? id,
       source: m.source,
       lookup: dscrLookup(m.thresholds),
       editable: false,
     })),
     {
       id: "custom",
-      label: "Custom",
-      title: "Custom (build your own)",
+      code: "Custom",
+      label: "Custom (build your own)",
       source: "User-defined DSCR→rating grid",
       lookup: dscrLookup(customThresholds),
       editable: true,
     },
   ];
-  const selectedSource =
-    methodId === "custom"
-      ? "User-defined DSCR→rating grid"
-      : (methods[methodId]?.source ?? "");
-  const selectedLabel =
-    methodId === "custom" ? "Custom (user-defined)" : (methods[methodId]?.label ?? methodId);
 
-  const setMethod = (id: string) => {
-    if (id === "custom") {
-      const seed = (methods[methodId]?.thresholds ?? defaultThresholds).map((t) => ({ ...t }));
-      setProfile({
-        rating_method: "custom",
-        custom_rating_thresholds: profile.custom_rating_thresholds ?? seed,
-      });
-    } else {
-      setProfile({ rating_method: id });
+  // Current selection (multi-select). Default to the library default method.
+  const selectedIds: string[] =
+    profile.rating_methods && profile.rating_methods.length > 0
+      ? profile.rating_methods
+      : profile.rating_method
+        ? [profile.rating_method]
+        : [defaultMethodId];
+  const isSelected = (id: string) => selectedIds.includes(id);
+
+  const toggleMethod = (id: string) => {
+    let next = isSelected(id) ? selectedIds.filter((m) => m !== id) : [...selectedIds, id];
+    if (next.length === 0) next = [id]; // always keep at least one selected
+    const patch: Partial<FinancialProfile> = { rating_methods: next, rating_method: next[0] };
+    if (id === "custom" && next.includes("custom") && !profile.custom_rating_thresholds) {
+      patch.custom_rating_thresholds = defaultThresholds.map((t) => ({ ...t }));
     }
+    setProfile(patch);
   };
   const setCustomDscr = (rating: string, v: number) => {
     const base = profile.custom_rating_thresholds ?? defaultThresholds;
@@ -192,8 +198,9 @@ export function FinanceView({
           Rating methodology
         </div>
         <p className="hint" style={{ marginTop: 2 }}>
-          DSCR ranges differ by agency / case — pick the grid that maps debt-service coverage to a
-          rating, or build your own. The same grid is applied to the portfolio and every asset.
+          DSCR ranges differ by agency / case. Tick one or more columns to compare — each is
+          assessed at the portfolio level; the first ticked is the primary (headline + per-asset
+          ratings). Edit the <strong>Custom</strong> column to build your own.
         </p>
         <div className="table-wrap" style={{ marginTop: 8 }}>
           <table className="agg-table">
@@ -201,21 +208,22 @@ export function FinanceView({
               <tr>
                 <th style={{ textAlign: "left" }}>Rating · DSCR ≥</th>
                 {columns.map((c) => {
-                  const active = c.id === methodId;
+                  const sel = isSelected(c.id);
                   return (
                     <th
                       key={c.id}
-                      onClick={() => setMethod(c.id)}
-                      title={c.title}
+                      onClick={() => toggleMethod(c.id)}
+                      title={c.label}
                       style={{
                         cursor: "pointer",
                         whiteSpace: "nowrap",
-                        background: active ? "var(--accent)" : "var(--panel-2)",
-                        color: active ? "#06231f" : "var(--text)",
+                        textAlign: "center",
+                        background: sel ? "var(--accent)" : "var(--panel-2)",
+                        color: sel ? "#06231f" : "var(--text)",
                       }}
                     >
-                      <span style={{ marginRight: 4 }}>{active ? "●" : "○"}</span>
-                      {c.label}
+                      <span style={{ marginRight: 4 }}>{sel ? "☑" : "☐"}</span>
+                      {c.code}
                       {c.id === defaultMethodId ? " ★" : ""}
                     </th>
                   );
@@ -227,17 +235,23 @@ export function FinanceView({
                 <tr key={rating}>
                   <td style={{ color: ratingColor(rating), fontWeight: 600 }}>{rating}</td>
                   {columns.map((c) => {
-                    const active = c.id === methodId;
+                    const sel = isSelected(c.id);
                     const v = c.lookup[rating];
                     const isFloor = v == null || v <= -900;
                     return (
-                      <td key={c.id} style={{ background: active ? "var(--panel-2)" : undefined }}>
+                      <td
+                        key={c.id}
+                        style={{
+                          textAlign: "center",
+                          background: sel ? "var(--panel-2)" : undefined,
+                        }}
+                      >
                         {c.editable && !isFloor ? (
                           <input
                             className="field-inline"
                             type="number"
                             step="0.05"
-                            style={{ width: 68 }}
+                            style={{ width: 64 }}
                             value={v}
                             onChange={(e) => setCustomDscr(rating, Number(e.target.value))}
                           />
@@ -254,12 +268,17 @@ export function FinanceView({
             </tbody>
           </table>
         </div>
-        <p className="hint" style={{ marginTop: 4 }}>
-          ★ default · click a column to select the methodology used for the assessment · edit the{" "}
-          <strong>Custom</strong> column to build your own. Selected:{" "}
-          <strong>{selectedLabel}</strong>
-          {selectedSource ? ` — ${selectedSource}` : ""}.
-        </p>
+        <div className="hint" style={{ marginTop: 6, lineHeight: 1.6 }}>
+          ★ library default. Methodologies:
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {columns.map((c) => (
+              <li key={c.id}>
+                <strong>{c.code}</strong> — {c.label}
+                {c.source ? ` · ${c.source}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <p className="hint" style={{ marginTop: 10 }}>
           Blank fields use the cited defaults (placeholders). Per-asset overrides set on a
@@ -287,8 +306,12 @@ export function FinanceView({
         <div className="card">
           <div className="section-title">Portfolio result</div>
           <p className="hint" style={{ marginTop: 2 }}>
-            Rated under <strong>{result.rating_method_label}</strong>
+            {result.methods_compared && result.methods_compared.length > 1 ? "Primary: " : "Rated under "}
+            <strong>{result.rating_method_label}</strong>
             {result.rating_method_source ? ` · ${result.rating_method_source}` : ""}
+            {result.methods_compared && result.methods_compared.length > 1
+              ? ` · comparing ${result.methods_compared.length} methodologies (below)`
+              : ""}
           </p>
           <div
             className="kpi"
@@ -313,6 +336,48 @@ export function FinanceView({
             {money(result.total_physical_aai, cur)} + transition {money(result.transition_annual_cost, cur)}) ·
             NPV loss {money(result.portfolio.npv_loss, cur)} ({result.portfolio.npv_loss_pct_capex.toFixed(1)}% of CAPEX).
           </p>
+
+          {result.methods_compared && result.methods_compared.length > 1 && (
+            <div style={{ marginTop: 12 }}>
+              <div className="section-title" style={{ marginBottom: 6 }}>
+                Methodology comparison
+              </div>
+              <div className="table-wrap">
+                <table className="agg-table">
+                  <thead>
+                    <tr>
+                      <th>Methodology</th>
+                      <th>Baseline</th>
+                      <th>Stressed</th>
+                      <th>CRP (bps)</th>
+                      <th>NPV loss</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.methods_compared.map((m, i) => (
+                      <tr key={m.method}>
+                        <td title={m.label}>
+                          {m.code}
+                          {i === 0 ? " (primary)" : ""}
+                        </td>
+                        <td style={{ color: ratingColor(m.scenario.baseline.rating) }}>
+                          {m.scenario.baseline.rating}
+                        </td>
+                        <td style={{ color: ratingColor(m.scenario.stressed.rating) }}>
+                          {m.scenario.stressed.rating}
+                        </td>
+                        <td>
+                          {m.scenario.crp_bps >= 0 ? "+" : ""}
+                          {m.scenario.crp_bps.toFixed(0)}
+                        </td>
+                        <td>{money(m.scenario.npv_loss, cur)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {result.per_asset.length > 0 && (
             <div style={{ marginTop: 12 }}>

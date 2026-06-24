@@ -23,6 +23,7 @@
     "moodys_sp": {
       "label": "Moody's / S&P (infrastructure & project finance)",
       "short": "Moody's / S&P",
+      "code": "Agency",
       "source": "Moody's Global Infrastructure Finance (2021) + S&P Project Finance Criteria (2022)",
       "note": "Default. DSCR bands typical of rated infrastructure / project-finance debt.",
       "thresholds": [
@@ -41,6 +42,7 @@
     "lender_conservative": {
       "label": "Lender / banking case (conservative)",
       "short": "Lender (conservative)",
+      "code": "Lender",
       "source": "Indicative — stricter DSCR bands typical of project-finance lender base cases",
       "note": "Higher coverage required for each rating; downgrades climate-stressed cashflows sooner.",
       "thresholds": [
@@ -59,6 +61,7 @@
     "equity_lenient": {
       "label": "Sponsor / equity case (lenient)",
       "short": "Sponsor (lenient)",
+      "code": "Sponsor",
       "source": "Indicative — lower DSCR bands typical of sponsor base cases",
       "note": "Lower coverage tolerated for each rating; holds ratings under modest climate stress.",
       "thresholds": [

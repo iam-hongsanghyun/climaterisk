@@ -41,28 +41,49 @@ def resolve_profile(
     )
 
 
-def resolve_rating_method(profile: FinancialProfile | None, ref: dict[str, Any]) -> dict[str, Any]:
-    """Resolve which DSCR→rating grid to use: a per-portfolio 'custom' grid, a named method
-    from ``rating_methods``, or the library default. Returns the thresholds plus display
-    metadata (id/label/source) so the result can show the methodology that was applied."""
+def selected_method_ids(profile: FinancialProfile | None, ref: dict[str, Any]) -> list[str]:
+    """Ordered list of methodology ids to compare. Prefers the multi-select ``rating_methods``,
+    falls back to the single ``rating_method`` (back-compat), else the library default."""
+    default_id = str(ref.get("default_rating_method", "moodys_sp"))
+    if profile and profile.rating_methods:
+        ids = [m for m in profile.rating_methods if m]
+        if ids:
+            return ids
+    if profile and profile.rating_method:
+        return [profile.rating_method]
+    return [default_id]
+
+
+def resolve_rating_method(
+    profile: FinancialProfile | None, ref: dict[str, Any], method_id: str
+) -> dict[str, Any]:
+    """Resolve one methodology id to its DSCR→rating grid plus display metadata
+    (id/label/code/source). 'custom' uses the profile's editable grid; an unknown id falls
+    back to the library default."""
     methods: dict[str, Any] = ref.get("rating_methods", {})
     default_id = str(ref.get("default_rating_method", "moodys_sp"))
-    chosen = (profile.rating_method if profile else None) or default_id
 
-    if chosen == "custom" and profile and profile.custom_rating_thresholds:
-        thresholds = [t.model_dump() for t in profile.custom_rating_thresholds]
+    if method_id == "custom":
+        thresholds = (
+            [t.model_dump() for t in profile.custom_rating_thresholds]
+            if profile and profile.custom_rating_thresholds
+            else list(ref.get("rating_dscr_thresholds", []))
+        )
         return {
             "method": "custom",
             "label": "Custom (user-defined)",
+            "code": "Custom",
             "source": "User-defined DSCR→rating grid",
             "thresholds": thresholds,
         }
 
-    method = methods.get(chosen) or methods.get(default_id)
+    method = methods.get(method_id) or methods.get(default_id)
     if method is not None:
+        resolved_id = method_id if method_id in methods else default_id
         return {
-            "method": chosen if chosen in methods else default_id,
-            "label": method.get("label", chosen),
+            "method": resolved_id,
+            "label": method.get("label", resolved_id),
+            "code": method.get("code", method.get("short", resolved_id)),
             "source": method.get("source", ""),
             "thresholds": method["thresholds"],
         }
@@ -70,6 +91,7 @@ def resolve_rating_method(profile: FinancialProfile | None, ref: dict[str, Any])
     return {
         "method": "moodys_sp",
         "label": "Moody's / S&P",
+        "code": "Agency",
         "source": "",
         "thresholds": ref["rating_dscr_thresholds"],
     }
@@ -97,19 +119,34 @@ def compute_finance(
     total_physical = sum(aai.values())
     port_ep = portfolio.run_config.financial_profile
     port_loss = total_physical + max(0.0, transition_annual_cost)
+    port_profile = resolve_profile(port_ep, None, ref)
 
-    # The DSCR→rating methodology is a portfolio-level "house view": resolve it once and
-    # apply the same grid to the portfolio and every per-asset assessment by swapping it
-    # into an effective ref (core reads ref["rating_dscr_thresholds"]).
-    rating = resolve_rating_method(port_ep, ref)
-    eff_ref = {**ref, "rating_dscr_thresholds": rating["thresholds"]}
+    # The user may select several DSCR→rating "house views" to compare. Assess the portfolio
+    # under each (swapping the grid into an effective ref — core reads rating_dscr_thresholds);
+    # the first selected method is the primary used for the headline and per-asset ratings.
+    method_ids = selected_method_ids(port_ep, ref)
+    methods_compared: list[dict[str, Any]] = []
+    for mid in method_ids:
+        r = resolve_rating_method(port_ep, ref, mid)
+        eff = {**ref, "rating_dscr_thresholds": r["thresholds"]}
+        methods_compared.append(
+            {
+                "method": r["method"],
+                "label": r["label"],
+                "code": r["code"],
+                "source": r["source"],
+                "scenario": core.assess(port_profile, port_loss, eff),
+            }
+        )
 
-    portfolio_result = core.assess(resolve_profile(port_ep, None, ref), port_loss, eff_ref)
+    primary = resolve_rating_method(port_ep, ref, method_ids[0])
+    eff_ref = {**ref, "rating_dscr_thresholds": primary["thresholds"]}
+    portfolio_result = methods_compared[0]["scenario"]
 
     per_asset: list[dict[str, Any]] = []
     for a in portfolio.assets:
         if a.financial_profile is None:
-            continue  # only assets with their own profile get a per-asset CRP
+            continue  # only assets with their own profile get a per-asset CRP (under the primary)
         res = core.assess(
             resolve_profile(a.financial_profile, port_ep, ref), aai.get(a.id, 0.0), eff_ref
         )
@@ -122,10 +159,11 @@ def compute_finance(
         "currency": cur,
         "total_physical_aai": total_physical,
         "transition_annual_cost": max(0.0, transition_annual_cost),
-        "rating_method": rating["method"],
-        "rating_method_label": rating["label"],
-        "rating_method_source": rating["source"],
-        "rating_thresholds": rating["thresholds"],
+        "rating_method": primary["method"],
+        "rating_method_label": primary["label"],
+        "rating_method_source": primary["source"],
+        "rating_thresholds": primary["thresholds"],
+        "methods_compared": methods_compared,
         "portfolio": portfolio_result,
         "per_asset": per_asset,
         "detail": (

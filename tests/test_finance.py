@@ -64,31 +64,39 @@ def test_resolve_rating_method_default_named_and_custom() -> None:
     from climaterisk.finance import service
 
     ref = _ref()
-    # No profile → library default.
-    assert service.resolve_rating_method(None, ref)["method"] == "moodys_sp"
-    # Named method.
-    named = service.resolve_rating_method(
-        FinancialProfile(rating_method="lender_conservative"), ref
-    )
-    assert named["method"] == "lender_conservative" and "conservative" in named["label"].lower()
-    # Custom grid wins when selected.
+    # No profile → library default selection.
+    assert service.selected_method_ids(None, ref) == ["moodys_sp"]
+    assert service.resolve_rating_method(None, ref, "moodys_sp")["code"] == "Agency"
+    # Named method resolves with its short code.
+    named = service.resolve_rating_method(None, ref, "lender_conservative")
+    assert named["method"] == "lender_conservative" and named["code"] == "Lender"
+    # Custom grid resolves from the profile's editable thresholds.
     custom = service.resolve_rating_method(
         FinancialProfile(
-            rating_method="custom",
             custom_rating_thresholds=[
                 RatingThreshold(dscr_min=1.0, rating="AAA"),
                 RatingThreshold(dscr_min=-999.0, rating="D"),
             ],
         ),
         ref,
+        "custom",
     )
     assert custom["method"] == "custom"
     assert core.rating_from_dscr(1.5, custom["thresholds"]) == "AAA"
     # Unknown id falls back to the default rather than raising.
-    assert (
-        service.resolve_rating_method(FinancialProfile(rating_method="nope"), ref)["method"]
-        == "moodys_sp"
-    )
+    assert service.resolve_rating_method(None, ref, "nope")["method"] == "moodys_sp"
+
+
+def test_selected_method_ids_prefers_multiselect() -> None:
+    from climaterisk.core.entities import FinancialProfile
+    from climaterisk.finance import service
+
+    ref = _ref()
+    multi = FinancialProfile(rating_methods=["lender_conservative", "moodys_sp"])
+    assert service.selected_method_ids(multi, ref) == ["lender_conservative", "moodys_sp"]
+    # Single field still honored for back-compat.
+    single = FinancialProfile(rating_method="equity_lenient")
+    assert service.selected_method_ids(single, ref) == ["equity_lenient"]
 
 
 def test_service_applies_chosen_method() -> None:
@@ -110,6 +118,33 @@ def test_service_applies_chosen_method() -> None:
     res = service.compute_finance(port, run_output, transition_annual_cost=0.0, ref=_ref())
     assert res["rating_method"] == "equity_lenient"
     assert res["rating_thresholds"][0]["rating"] == "AAA"
+    assert len(res["methods_compared"]) == 1
+
+
+def test_service_compares_multiple_methods() -> None:
+    from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
+    from climaterisk.finance import service
+
+    a = Asset(name="A", lat=35.0, lon=139.0, sector="oil_gas", value=1e9, currency="USD")
+    port = Portfolio(
+        assets=[a],
+        run_config=RunConfig(
+            financial_profile=FinancialProfile(
+                capex=2e9,
+                annual_ebitda=3e8,
+                rating_methods=["moodys_sp", "lender_conservative", "equity_lenient"],
+            )
+        ),
+    )
+    run_output = {
+        "results": [{"status": "ok", "peril": "tc", "per_asset": [{"id": a.id, "eai": 1e7}]}]
+    }
+    res = service.compute_finance(port, run_output, transition_annual_cost=0.0, ref=_ref())
+    compared = res["methods_compared"]
+    assert [m["code"] for m in compared] == ["Agency", "Lender", "Sponsor"]
+    # Primary (headline) is the first selected; each entry carries a full scenario.
+    assert res["rating_method"] == "moodys_sp"
+    assert all("baseline" in m["scenario"] and "crp_bps" in m["scenario"] for m in compared)
 
 
 def test_service_aggregates_run_and_overrides() -> None:

@@ -49,12 +49,18 @@ class FinancialProfile(BaseModel):
     baseline_equity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     rating_method: str | None = Field(
         default=None,
-        description="DSCR→rating methodology id from finance_reference.rating_methods, "
-        "or 'custom' to use custom_rating_thresholds. None uses the library default.",
+        description="Single DSCR→rating methodology id (back-compat / primary). Superseded by "
+        "rating_methods when that is set. None uses the library default.",
+    )
+    rating_methods: list[str] | None = Field(
+        default=None,
+        description="Selected DSCR→rating methodology ids to compare (from "
+        "finance_reference.rating_methods, plus 'custom'). The first is the primary used for the "
+        "headline and per-asset ratings; all are compared at the portfolio level.",
     )
     custom_rating_thresholds: list[RatingThreshold] | None = Field(
         default=None,
-        description="User-defined DSCR→rating grid; used when rating_method == 'custom'.",
+        description="User-defined DSCR→rating grid; used when 'custom' is selected.",
     )
 
 
