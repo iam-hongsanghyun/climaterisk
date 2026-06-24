@@ -262,34 +262,34 @@ export function ResultsView({
             </span>
           ))}
         </p>
-        <button className="btn" onClick={onRun} disabled={busy || running || model.assets.length === 0}>
-          {running ? "Running CLIMADA…" : busy ? "Submitting…" : "Run analysis"}
-        </button>
-        <a
-          className="btn secondary"
-          href={reportHref}
-          style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
-        >
-          Download report
-        </a>
-        {run?.status === "done" && (
-          <>
-            <a
-              className="btn secondary"
-              href={`/api/session/${model.id}/run/${run.id}/export?fmt=csv`}
-              style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
-            >
-              Export CSV
-            </a>
-            <a
-              className="btn secondary"
-              href={`/api/session/${model.id}/run/${run.id}/export?fmt=geojson`}
-              style={{ marginLeft: 8, textDecoration: "none", display: "inline-block" }}
-            >
-              Export GeoJSON
-            </a>
-          </>
-        )}
+        <div className="form-row">
+          <button
+            className="btn"
+            onClick={onRun}
+            disabled={busy || running || model.assets.length === 0}
+          >
+            {running ? "Running CLIMADA…" : busy ? "Submitting…" : "Run analysis"}
+          </button>
+          <a className="btn secondary" href={reportHref}>
+            Download report
+          </a>
+          {run?.status === "done" && (
+            <>
+              <a
+                className="btn secondary"
+                href={`/api/session/${model.id}/run/${run.id}/export?fmt=csv`}
+              >
+                Export CSV
+              </a>
+              <a
+                className="btn secondary"
+                href={`/api/session/${model.id}/run/${run.id}/export?fmt=geojson`}
+              >
+                Export GeoJSON
+              </a>
+            </>
+          )}
+        </div>
         {running && (
           <div className="status-box running" style={{ marginTop: 10 }}>
             <span className="spinner" />
