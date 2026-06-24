@@ -55,6 +55,13 @@ export function useResults(sessionId: string) {
   const [fcBusy, setFcBusy] = useState(false);
   const [fcErr, setFcErr] = useState<string | null>(null);
 
+  // Bumped when a poll's fetch fails transiently (e.g. a network blip during a long MRIO
+  // download). It re-arms the in-flight poller so polling survives the blip instead of
+  // stopping and surfacing a scary "Failed to fetch" — genuine run errors still arrive as
+  // status==="error" via a successful fetch.
+  const [pollTick, setPollTick] = useState(0);
+  const repoll = () => setPollTick((n) => n + 1);
+
   // Reset everything when the session changes.
   const sid = useRef(sessionId);
   useEffect(() => {
@@ -84,12 +91,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setLitpopRun(await getRun(sessionId, litpopRun.id));
-      } catch (e) {
-        setLitpopErr(String(e));
+      } catch {
+        repoll(); // transient fetch blip — keep polling
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [litpopRun, sessionId]);
+  }, [litpopRun, sessionId, pollTick]);
 
   // Poll the uncertainty run while in flight.
   useEffect(() => {
@@ -97,12 +104,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setUncRun(await getRun(sessionId, uncRun.id));
-      } catch (e) {
-        setUncErr(String(e));
+      } catch {
+        repoll();
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [uncRun, sessionId]);
+  }, [uncRun, sessionId, pollTick]);
 
   // Poll the physical run while in flight (continues regardless of active tab).
   useEffect(() => {
@@ -110,12 +117,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setPhysRun(await getRun(sessionId, physRun.id));
-      } catch (e) {
-        setPhysErr(String(e));
+      } catch {
+        repoll();
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [physRun, sessionId]);
+  }, [physRun, sessionId, pollTick]);
 
   // Poll the cost-benefit run while in flight.
   useEffect(() => {
@@ -123,12 +130,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setCbRun(await getRun(sessionId, cbRun.id));
-      } catch (e) {
-        setCbErr(String(e));
+      } catch {
+        repoll();
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [cbRun, sessionId]);
+  }, [cbRun, sessionId, pollTick]);
 
   // Poll the supply-chain run while in flight (the MRIO fetch can take a while).
   useEffect(() => {
@@ -136,12 +143,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setScRun(await getRun(sessionId, scRun.id));
-      } catch (e) {
-        setScErr(String(e));
+      } catch {
+        repoll();
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [scRun, sessionId]);
+  }, [scRun, sessionId, pollTick]);
 
   const runSupplyChain = async () => {
     setScErr(null);
@@ -162,12 +169,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setCalRun(await getRun(sessionId, calRun.id));
-      } catch (e) {
-        setCalErr(String(e));
+      } catch {
+        repoll();
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [calRun, sessionId]);
+  }, [calRun, sessionId, pollTick]);
 
   const runCalibration = async () => {
     setCalErr(null);
@@ -188,12 +195,12 @@ export function useResults(sessionId: string) {
     const t = setTimeout(async () => {
       try {
         setFcRun(await getRun(sessionId, fcRun.id));
-      } catch (e) {
-        setFcErr(String(e));
+      } catch {
+        repoll();
       }
     }, 2000);
     return () => clearTimeout(t);
-  }, [fcRun, sessionId]);
+  }, [fcRun, sessionId, pollTick]);
 
   const runForecast = async () => {
     setFcErr(null);
