@@ -27,6 +27,13 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
+class RatingThreshold(BaseModel):
+    """One row of a DSCR→rating grid: a rating applies when DSCR ≥ ``dscr_min``."""
+
+    dscr_min: float = Field(description="Minimum DSCR for this rating (descending grid).")
+    rating: str = Field(description="Credit rating label, e.g. 'AA'.")
+
+
 class FinancialProfile(BaseModel):
     """Project economics for the climate-risk-premium engine. Used as a portfolio-level
     default and (optionally) overridden per asset. Unset fields fall back to the cited
@@ -40,6 +47,15 @@ class FinancialProfile(BaseModel):
     risk_free_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     baseline_spread_bps: float | None = Field(default=None, ge=0.0)
     baseline_equity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    rating_method: str | None = Field(
+        default=None,
+        description="DSCR→rating methodology id from finance_reference.rating_methods, "
+        "or 'custom' to use custom_rating_thresholds. None uses the library default.",
+    )
+    custom_rating_thresholds: list[RatingThreshold] | None = Field(
+        default=None,
+        description="User-defined DSCR→rating grid; used when rating_method == 'custom'.",
+    )
 
 
 class Asset(BaseModel):

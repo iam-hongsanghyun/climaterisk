@@ -27,6 +27,10 @@ export interface Scenario {
   anchor_years: number[];
 }
 
+export interface RatingThreshold {
+  dscr_min: number;
+  rating: string;
+}
 export interface FinancialProfile {
   capex?: number | null;
   annual_ebitda?: number | null;
@@ -36,6 +40,8 @@ export interface FinancialProfile {
   risk_free_rate?: number | null;
   baseline_spread_bps?: number | null;
   baseline_equity_rate?: number | null;
+  rating_method?: string | null; // id from finance_reference.rating_methods, or "custom"
+  custom_rating_thresholds?: RatingThreshold[] | null;
 }
 export interface RunConfig {
   perils: string[];
@@ -69,6 +75,10 @@ export interface FinanceResult {
   currency: string;
   total_physical_aai: number;
   transition_annual_cost: number;
+  rating_method: string;
+  rating_method_label: string;
+  rating_method_source: string;
+  rating_thresholds: RatingThreshold[];
   portfolio: FinanceScenario;
   per_asset: FinanceAssetResult[];
   detail: string;
@@ -184,7 +194,13 @@ export interface Libraries {
   impact_functions: { classes: VulnerabilityClass[]; flood_depth_m: number[]; eq_mmi: number[] };
   impf_presets?: { presets: ImpfPreset[] };
   finance_reference?: {
+    rating_scale?: string[];
     rating_dscr_thresholds: { dscr_min: number; rating: string; source: string }[];
+    default_rating_method?: string;
+    rating_methods?: Record<
+      string,
+      { label: string; short?: string; source: string; note?: string; thresholds: RatingThreshold[] }
+    >;
     rating_spreads_bps: { rating: string; spread_bps: number; source: string }[];
     financing_defaults: Record<string, { value: number; source: string }>;
   };

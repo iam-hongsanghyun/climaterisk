@@ -48,6 +48,70 @@ def test_assess_counterfactual_crp() -> None:
     assert mild["crp_bps"] == 0.0 and mild["downgrade"] is False
 
 
+def test_rating_methods_diverge_for_same_dscr() -> None:
+    # A single DSCR rates differently under each methodology — the whole point of letting
+    # the user choose: 2.3× coverage is AA under Moody's/S&P, only A for a strict lender,
+    # but AAA in a lenient sponsor case.
+    methods = _ref()["rating_methods"]
+    dscr = 2.3
+    assert core.rating_from_dscr(dscr, methods["moodys_sp"]["thresholds"]) == "AA"
+    assert core.rating_from_dscr(dscr, methods["lender_conservative"]["thresholds"]) == "A"
+    assert core.rating_from_dscr(dscr, methods["equity_lenient"]["thresholds"]) == "AAA"
+
+
+def test_resolve_rating_method_default_named_and_custom() -> None:
+    from climaterisk.core.entities import FinancialProfile, RatingThreshold
+    from climaterisk.finance import service
+
+    ref = _ref()
+    # No profile → library default.
+    assert service.resolve_rating_method(None, ref)["method"] == "moodys_sp"
+    # Named method.
+    named = service.resolve_rating_method(
+        FinancialProfile(rating_method="lender_conservative"), ref
+    )
+    assert named["method"] == "lender_conservative" and "conservative" in named["label"].lower()
+    # Custom grid wins when selected.
+    custom = service.resolve_rating_method(
+        FinancialProfile(
+            rating_method="custom",
+            custom_rating_thresholds=[
+                RatingThreshold(dscr_min=1.0, rating="AAA"),
+                RatingThreshold(dscr_min=-999.0, rating="D"),
+            ],
+        ),
+        ref,
+    )
+    assert custom["method"] == "custom"
+    assert core.rating_from_dscr(1.5, custom["thresholds"]) == "AAA"
+    # Unknown id falls back to the default rather than raising.
+    assert (
+        service.resolve_rating_method(FinancialProfile(rating_method="nope"), ref)["method"]
+        == "moodys_sp"
+    )
+
+
+def test_service_applies_chosen_method() -> None:
+    from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
+    from climaterisk.finance import service
+
+    a = Asset(name="A", lat=35.0, lon=139.0, sector="oil_gas", value=1e9, currency="USD")
+    port = Portfolio(
+        assets=[a],
+        run_config=RunConfig(
+            financial_profile=FinancialProfile(
+                capex=2e9, annual_ebitda=3e8, rating_method="equity_lenient"
+            )
+        ),
+    )
+    run_output = {
+        "results": [{"status": "ok", "peril": "tc", "per_asset": [{"id": a.id, "eai": 1e7}]}]
+    }
+    res = service.compute_finance(port, run_output, transition_annual_cost=0.0, ref=_ref())
+    assert res["rating_method"] == "equity_lenient"
+    assert res["rating_thresholds"][0]["rating"] == "AAA"
+
+
 def test_service_aggregates_run_and_overrides() -> None:
     from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
     from climaterisk.finance import service

@@ -4,7 +4,8 @@
     {
       "name": "climaterisk-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend/climaterisk", "run", "dev", "--", "--port", "5174"],
+      "runtimeArgs": ["--prefix", "frontend/climaterisk", "run", "dev"],
+      "autoPort": true,
       "port": 5174
     }
   ]
