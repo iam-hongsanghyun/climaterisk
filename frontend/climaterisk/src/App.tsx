@@ -7,6 +7,7 @@ import { MapView } from "./views/MapView";
 import { ScenariosView } from "./views/ScenariosView";
 import { ResultsView } from "./views/ResultsView";
 import { AdaptationView } from "./views/AdaptationView";
+import { FinanceView } from "./views/FinanceView";
 import { SupplyChainView } from "./views/SupplyChainView";
 import { ForecastView } from "./views/ForecastView";
 import { VulnerabilityView } from "./views/VulnerabilityView";
@@ -150,6 +151,15 @@ export function App() {
               busy={results.cbBusy}
               error={results.cbErr}
               onRun={results.runCostBenefit}
+            />
+          )}
+          {view === "finance" && (
+            <FinanceView
+              model={model}
+              libraries={libraries}
+              patchModel={patchModel}
+              physRun={results.physRun}
+              transition={results.transition}
             />
           )}
           {view === "supplychain" && (

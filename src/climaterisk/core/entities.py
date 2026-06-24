@@ -27,6 +27,21 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
+class FinancialProfile(BaseModel):
+    """Project economics for the climate-risk-premium engine. Used as a portfolio-level
+    default and (optionally) overridden per asset. Unset fields fall back to the cited
+    ``finance_reference.json`` financing defaults."""
+
+    capex: float | None = Field(default=None, ge=0.0, description="Total capital outlay.")
+    annual_ebitda: float | None = Field(default=None, description="Baseline annual EBITDA.")
+    horizon_years: int | None = Field(default=None, ge=1, le=60)
+    debt_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
+    debt_tenor_years: int | None = Field(default=None, ge=1, le=60)
+    risk_free_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    baseline_spread_bps: float | None = Field(default=None, ge=0.0)
+    baseline_equity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class Asset(BaseModel):
     """A located facility — one CLIMADA exposure point (or footprint)."""
 
@@ -53,6 +68,7 @@ class Asset(BaseModel):
         "samples for lines).",
     )
     properties: dict[str, float | str | bool] = Field(default_factory=dict)
+    financial_profile: FinancialProfile | None = None  # per-asset CRP override (optional)
 
 
 class Scenario(BaseModel):
@@ -70,6 +86,7 @@ class RunConfig(BaseModel):
     discount_rate: float = Field(default=0.05, ge=0.0, le=1.0)
     exposure_source: ExposureSource = ExposureSource.POINTS
     options: dict[str, float | str | bool] = Field(default_factory=dict)
+    financial_profile: FinancialProfile | None = None  # portfolio-level CRP project economics
 
 
 class VulnerabilityOverride(BaseModel):

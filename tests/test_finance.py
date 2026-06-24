@@ -46,3 +46,37 @@ def test_assess_counterfactual_crp() -> None:
     # Negligible loss → same rating → zero CRP.
     mild = core.assess(p, annual_climate_loss=5.0, ref=ref)
     assert mild["crp_bps"] == 0.0 and mild["downgrade"] is False
+
+
+def test_service_aggregates_run_and_overrides() -> None:
+    from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
+    from climaterisk.finance import service
+
+    a1 = Asset(name="A", lat=35.0, lon=139.0, sector="oil_gas", value=1e9, currency="USD")
+    a2 = Asset(
+        name="B",
+        lat=36.0,
+        lon=140.0,
+        sector="oil_gas",
+        value=1e9,
+        currency="USD",
+        financial_profile=FinancialProfile(capex=5e8, annual_ebitda=8e7),  # per-asset override
+    )
+    port = Portfolio(
+        assets=[a1, a2],
+        run_config=RunConfig(financial_profile=FinancialProfile(capex=2e9, annual_ebitda=3e8)),
+    )
+    run_output = {
+        "results": [
+            {
+                "status": "ok",
+                "peril": "tc",
+                "per_asset": [{"id": a1.id, "eai": 1e7}, {"id": a2.id, "eai": 2e7}],
+            }
+        ]
+    }
+    res = service.compute_finance(port, run_output, transition_annual_cost=5e6, ref=_ref())
+    assert res["total_physical_aai"] == 3e7  # 1e7 + 2e7 summed across the peril
+    assert "crp_bps" in res["portfolio"]
+    assert [a["id"] for a in res["per_asset"]] == [a2.id]  # only the overridden asset
+    assert res["per_asset"][0]["annual_climate_loss"] == 2e7

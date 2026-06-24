@@ -18,6 +18,7 @@ export interface Asset {
   vulnerability_class: string | null;
   geometry?: Record<string, unknown> | null; // GeoJSON footprint (Polygon/MultiPolygon)
   properties: Record<string, string | number | boolean>;
+  financial_profile?: FinancialProfile | null; // per-asset CRP override
 }
 
 export interface Scenario {
@@ -26,11 +27,51 @@ export interface Scenario {
   anchor_years: number[];
 }
 
+export interface FinancialProfile {
+  capex?: number | null;
+  annual_ebitda?: number | null;
+  horizon_years?: number | null;
+  debt_fraction?: number | null;
+  debt_tenor_years?: number | null;
+  risk_free_rate?: number | null;
+  baseline_spread_bps?: number | null;
+  baseline_equity_rate?: number | null;
+}
 export interface RunConfig {
   perils: string[];
   discount_rate: number;
   exposure_source?: ExposureSource;
   options: Record<string, string | number | boolean>;
+  financial_profile?: FinancialProfile | null;
+}
+export interface FinanceOutcome {
+  npv: number;
+  irr: number | null;
+  min_dscr: number;
+  rating: string;
+  spread_bps: number;
+  wacc: number;
+}
+export interface FinanceScenario {
+  baseline: FinanceOutcome;
+  stressed: FinanceOutcome;
+  crp_bps: number;
+  npv_loss: number;
+  npv_loss_pct_capex: number;
+  downgrade: boolean;
+  annual_climate_loss: number;
+}
+export interface FinanceAssetResult extends FinanceScenario {
+  id: string;
+  name: string;
+}
+export interface FinanceResult {
+  currency: string;
+  total_physical_aai: number;
+  transition_annual_cost: number;
+  portfolio: FinanceScenario;
+  per_asset: FinanceAssetResult[];
+  detail: string;
 }
 
 export interface VulnerabilityOverride {
@@ -142,6 +183,11 @@ export interface Libraries {
   };
   impact_functions: { classes: VulnerabilityClass[]; flood_depth_m: number[]; eq_mmi: number[] };
   impf_presets?: { presets: ImpfPreset[] };
+  finance_reference?: {
+    rating_dscr_thresholds: { dscr_min: number; rating: string; source: string }[];
+    rating_spreads_bps: { rating: string; spread_bps: number; source: string }[];
+    financing_defaults: Record<string, { value: number; source: string }>;
+  };
   carbon_prices?: { prices: Record<string, Record<string, number>> };
   data_sources: DataSourcesLib;
 }

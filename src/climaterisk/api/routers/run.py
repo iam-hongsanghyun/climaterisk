@@ -8,7 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
@@ -189,6 +189,35 @@ def get_run(session_id: str, run_id: str, manager: ManagerDep) -> Run:
     if run is None or run.session_id != session_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="run not found")
     return run
+
+
+@router.post("/{session_id}/finance")
+def compute_finance_route(
+    session_id: str,
+    run_id: str,
+    store: StoreDep,
+    manager: ManagerDep,
+    transition_cost: float = 0.0,
+) -> dict[str, Any]:
+    """Climate Risk Premium for a completed physical run: cashflow → NPV/IRR/DSCR →
+    rating → CRP, baseline vs climate-stressed. Synchronous (pure finance math, no worker)."""
+    from climaterisk.data.libraries import load_libraries
+    from climaterisk.finance.service import compute_finance
+
+    portfolio = store.get(session_id)
+    if portfolio is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    run = manager.poll(run_id)
+    if run is None or run.session_id != session_id or run.status != "done" or not run.output:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="run not finished")
+    prof = portfolio.run_config.financial_profile
+    if prof is None or not prof.capex or not prof.annual_ebitda:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="set a financial profile (CAPEX + annual EBITDA) in the Finance tab first",
+        )
+    ref = load_libraries()["finance_reference"]
+    return compute_finance(portfolio, run.output, transition_cost, ref)
 
 
 def _per_asset_rows(output: dict) -> list[dict]:  # type: ignore[type-arg]

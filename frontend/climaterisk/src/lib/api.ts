@@ -2,6 +2,7 @@
 // is synced back to the backend (which owns it).
 
 import type {
+  FinanceResult,
   HazardCatalog,
   IngestSource,
   Libraries,
@@ -73,6 +74,17 @@ export async function submitHazardPreview(
 /** URL of the rendered hazard-preview PNG for a finished preview run. */
 export function hazardPreviewImageUrl(sessionId: string, runId: string): string {
   return `/api/session/${sessionId}/run/${runId}/preview.png`;
+}
+
+/** Climate Risk Premium for a finished physical run (synchronous; reads the portfolio's
+ *  financial profile). transitionCost is the annual carbon cost to add to the climate shock. */
+export async function computeFinance(
+  sessionId: string,
+  runId: string,
+  transitionCost = 0,
+): Promise<FinanceResult> {
+  const qs = `run_id=${encodeURIComponent(runId)}&transition_cost=${transitionCost}`;
+  return http<FinanceResult>(`/api/session/${sessionId}/finance?${qs}`, { method: "POST" });
 }
 
 export async function submitRun(sessionId: string): Promise<Run> {
