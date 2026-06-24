@@ -3,6 +3,8 @@ import {
   CircleMarker,
   ImageOverlay,
   MapContainer,
+  Polygon,
+  Polyline,
   TileLayer,
   Tooltip,
   useMapEvents,
@@ -44,6 +46,17 @@ function turboAt(f: number): string {
 }
 
 const EXPOSURE_LAYER = "__exposure__";
+
+/** GeoJSON Polygon/LineString → leaflet [lat,lon][] positions (null for points/other). */
+function geomPositions(geom: unknown): { kind: "polygon" | "line"; pos: [number, number][] } | null {
+  const g = geom as { type?: string; coordinates?: unknown } | null;
+  if (!g?.type) return null;
+  if (g.type === "Polygon")
+    return { kind: "polygon", pos: (g.coordinates as number[][][])[0].map(([lo, la]) => [la, lo]) };
+  if (g.type === "LineString")
+    return { kind: "line", pos: (g.coordinates as number[][]).map(([lo, la]) => [la, lo]) };
+  return null;
+}
 
 function newAsset(lat: number, lon: number): Asset {
   return {
@@ -88,6 +101,8 @@ export function MapView({
   onRunLitpop: (country: string, source: string, peril: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawMode, setDrawMode] = useState<"point" | "polygon" | "line">("point");
+  const [draft, setDraft] = useState<[number, number][]>([]); // [lat, lon] vertices in progress
   const [litpopCountry, setLitpopCountry] = useState("JPN");
   const [litpopSource, setLitpopSource] = useState("litpop");
   const [litpopPeril, setLitpopPeril] = useState("tropical_cyclone");
@@ -145,10 +160,37 @@ export function MapView({
   const vMax = vals.length ? Math.max(...vals) : 0;
   const valueFrac = (v: number) => (vMax > vMin ? (v - vMin) / (vMax - vMin) : 0.5);
 
-  const addAsset = (lat: number, lon: number) => {
-    const asset = newAsset(lat, lon);
+  const addAsset = (
+    lat: number,
+    lon: number,
+    geometry?: Record<string, unknown>,
+    scale: Asset["geographic_scale"] = "point",
+  ) => {
+    const asset = { ...newAsset(lat, lon), geographic_scale: scale, geometry: geometry ?? null };
     patchModel({ assets: [...model.assets, asset] });
     setSelectedId(asset.id);
+  };
+
+  // Draw directly on the map: in polygon/line mode, clicks accumulate vertices; Finish
+  // builds the geometry asset. (Point mode = the original click-to-place.)
+  const onMapClick = (lat: number, lon: number) => {
+    if (drawMode === "point") addAsset(lat, lon);
+    else setDraft((d) => [...d, [Number(lat.toFixed(5)), Number(lon.toFixed(5))]]);
+  };
+  const cancelDraw = () => setDraft([]);
+  const finishDraw = () => {
+    const need = drawMode === "polygon" ? 3 : 2;
+    if (draft.length < need) return;
+    const ll = draft.map(([la, lo]) => [lo, la]); // GeoJSON is [lon, lat]
+    const geometry =
+      drawMode === "polygon"
+        ? { type: "Polygon", coordinates: [[...ll, ll[0]]] }
+        : { type: "LineString", coordinates: ll };
+    const cLat = draft.reduce((s, [la]) => s + la, 0) / draft.length;
+    const cLon = draft.reduce((s, [, lo]) => s + lo, 0) / draft.length;
+    addAsset(cLat, cLon, geometry, "footprint");
+    setDraft([]);
+    setDrawMode("point");
   };
   const updateAsset = (id: string, patch: Partial<Asset>) => {
     patchModel({ assets: model.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
@@ -166,7 +208,16 @@ export function MapView({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <ClickToAdd onAdd={addAsset} />
+          <ClickToAdd onAdd={onMapClick} />
+          {draft.length > 0 &&
+            (drawMode === "polygon" ? (
+              <Polygon positions={draft} pathOptions={{ color: "#3aa0ff", dashArray: "5" }} />
+            ) : (
+              <Polyline positions={draft} pathOptions={{ color: "#3aa0ff", dashArray: "5" }} />
+            ))}
+          {draft.map((v, i) => (
+            <CircleMarker key={`draft-${i}`} center={v} radius={4} pathOptions={{ color: "#3aa0ff", fillColor: "#3aa0ff", fillOpacity: 1 }} />
+          ))}
           {layer && (
             <ImageOverlay
               key={layer.url}
@@ -176,6 +227,16 @@ export function MapView({
               zIndex={400}
             />
           )}
+          {model.assets.map((a) => {
+            const g = geomPositions(a.geometry);
+            if (!g) return null;
+            const opts = { color: "#2f9e8f", weight: 2, fillOpacity: 0.15 };
+            return g.kind === "polygon" ? (
+              <Polygon key={`g-${a.id}`} positions={g.pos} pathOptions={opts} />
+            ) : (
+              <Polyline key={`g-${a.id}`} positions={g.pos} pathOptions={{ ...opts, weight: 3 }} />
+            );
+          })}
           {model.assets.map((a) => (
             <CircleMarker
               key={a.id}
@@ -219,6 +280,46 @@ export function MapView({
           />
         ) : (
           <>
+            <div style={{ marginBottom: 4 }}>
+              <div className="section-title">Draw on map</div>
+              <div className="form-row" style={{ marginTop: 6 }}>
+                {(["point", "polygon", "line"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`btn ${drawMode === m ? "" : "secondary"}`}
+                    style={{ padding: "5px 10px", textTransform: "capitalize" }}
+                    onClick={() => {
+                      setDraft([]);
+                      setDrawMode(m);
+                    }}
+                  >
+                    {m === "point" ? "📍 Point" : m === "polygon" ? "▢ Polygon" : "／ Line"}
+                  </button>
+                ))}
+              </div>
+              {drawMode === "point" ? (
+                <p className="hint" style={{ marginTop: 6 }}>
+                  Click anywhere on the map to place a facility.
+                </p>
+              ) : (
+                <div className="control-group" style={{ marginTop: 6 }}>
+                  <span className="hint" style={{ flexBasis: "100%" }}>
+                    Click to add {drawMode} vertices ({draft.length} so far), then Finish — it
+                    becomes a footprint asset (value split across it).
+                  </span>
+                  <button
+                    className="btn"
+                    onClick={finishDraw}
+                    disabled={draft.length < (drawMode === "polygon" ? 3 : 2)}
+                  >
+                    Finish {drawMode}
+                  </button>
+                  <button className="btn secondary" onClick={cancelDraw} disabled={!draft.length}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
             {((catalog?.entries.length ?? 0) > 0 || model.assets.length > 0) && (
               <div style={{ marginBottom: 4 }}>
                 <div className="section-title">Map layer (preview)</div>
