@@ -57,7 +57,7 @@ function FootprintField({
 
   return (
     <div className="field">
-      <label>Footprint geometry (draw a polygon, or edit GeoJSON)</label>
+      <label>Footprint / line geometry (draw a polygon or line, or edit GeoJSON)</label>
       <div style={{ marginBottom: 6 }}>
         <Suspense fallback={<p className="hint">Loading map…</p>}>
           <FootprintDrawMap

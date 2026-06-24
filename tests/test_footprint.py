@@ -47,6 +47,15 @@ def test_footprint_points_caps_at_max() -> None:
     assert len(pts) == 16
 
 
+def test_footprint_points_samples_along_a_line() -> None:
+    pytest.importorskip("shapely")
+    line = {"type": "LineString", "coordinates": [[139.0, 35.0], [139.5, 35.2], [140.0, 35.0]]}
+    pts = physical._footprint_points(line, res_deg=0.05)
+    assert len(pts) >= 2  # a line has no interior — points are interpolated ALONG it
+    assert pts[0] == (35.0, 139.0) and pts[-1] == (35.0, 140.0)  # endpoints preserved
+    assert all(139.0 <= lon <= 140.0 for _, lon in pts)
+
+
 def test_footprint_tiny_polygon_falls_back_to_centroid() -> None:
     pytest.importorskip("shapely")
     tiny = {

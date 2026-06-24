@@ -47,8 +47,10 @@ class Asset(BaseModel):
     )
     geometry: dict[str, Any] | None = Field(
         default=None,
-        description="Optional GeoJSON geometry (Polygon/MultiPolygon) for footprint-scale "
-        "exposure; when set, runners disaggregate it to points (lines_polys_handler).",
+        description="Optional GeoJSON geometry (Polygon/MultiPolygon for a footprint, or "
+        "LineString/MultiLineString for a pipeline/transmission/road); when set, runners "
+        "disaggregate it to representative points (interior grid for polygons, along-line "
+        "samples for lines).",
     )
     properties: dict[str, float | str | bool] = Field(default_factory=dict)
 

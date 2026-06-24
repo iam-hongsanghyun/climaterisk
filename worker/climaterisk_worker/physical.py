@@ -69,21 +69,36 @@ def _single_country_iso3(iso3s: list[str | None]) -> str | None:
 
 
 def _footprint_points(geom: dict[str, Any], res_deg: float = 0.02, max_points: int = 64):  # type: ignore[no-untyped-def]
-    """Disaggregate a GeoJSON polygon footprint to interior grid points (lat, lon).
+    """Disaggregate a GeoJSON footprint to representative points (lat, lon).
 
-    A regular ``res_deg`` grid over the polygon's bounds, kept where inside the polygon;
-    falls back to the centroid for tiny polygons and evenly subsamples to ``max_points``.
+    - Polygon / MultiPolygon → a regular ``res_deg`` grid kept inside the shape.
+    - LineString / MultiLineString → points interpolated ALONG the line at ~``res_deg``
+      spacing (a line has no interior area, so a grid-contains test would find nothing —
+      this is how pipelines / transmission / roads disaggregate).
+    Falls back to the centroid for tiny/degenerate shapes; evenly subsamples to ``max_points``.
     """
     import numpy as np
     from shapely.geometry import Point, shape
 
-    poly = shape(geom)
-    minx, miny, maxx, maxy = poly.bounds
-    xs = np.arange(minx, maxx + 1e-9, res_deg)
-    ys = np.arange(miny, maxy + 1e-9, res_deg)
-    pts = [(float(y), float(x)) for x in xs for y in ys if poly.contains(Point(x, y))]
+    g = shape(geom)
+    pts: list[tuple[float, float]] = []
+    if "LineString" in g.geom_type:
+        lines = list(g.geoms) if g.geom_type.startswith("Multi") else [g]
+        for line in lines:
+            if line.length <= 0:
+                continue
+            n = max(2, round(line.length / res_deg) + 1)
+            pts += [
+                (float(p.y), float(p.x))
+                for p in (line.interpolate(i / (n - 1), normalized=True) for i in range(n))
+            ]
+    else:  # Polygon / MultiPolygon
+        minx, miny, maxx, maxy = g.bounds
+        xs = np.arange(minx, maxx + 1e-9, res_deg)
+        ys = np.arange(miny, maxy + 1e-9, res_deg)
+        pts = [(float(y), float(x)) for x in xs for y in ys if g.contains(Point(x, y))]
     if not pts:
-        c = poly.centroid
+        c = g.centroid
         return [(float(c.y), float(c.x))]
     if len(pts) > max_points:
         step = len(pts) / max_points

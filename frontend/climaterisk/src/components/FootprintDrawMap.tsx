@@ -47,7 +47,7 @@ export function FootprintDrawMap({
       });
       const draw = new MapboxDraw({
         displayControlsDefault: false,
-        controls: { polygon: true, trash: true },
+        controls: { polygon: true, line_string: true, trash: true },
       });
       // mapbox-gl-draw is an IControl; MapLibre's addControl accepts it at runtime.
       map.addControl(draw as unknown as maplibregl.IControl);
