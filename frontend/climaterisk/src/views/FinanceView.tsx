@@ -4,6 +4,7 @@ import type {
   FinancialProfile,
   Libraries,
   Portfolio,
+  PowerGenBreakdown,
   RatingThreshold,
   Run,
   TransitionResult,
@@ -129,8 +130,22 @@ export function FinanceView({
     setProfile({ custom_rating_thresholds: next });
   };
 
+  // Asset financial model: "generic" (damage + carbon) or "power_gen" (generation channels).
+  const isPower = profile.financial_model === "power_gen";
+  const fc = libraries.finance_channels;
+  const fuels = Object.keys(fc?.generation_defaults?.capacity_factor_by_fuel ?? {}).filter(
+    (k) => !k.startsWith("_"),
+  );
+  const channelSource =
+    `Efficiency: ${fc?.channels?.efficiency?.loss_per_degc?.source ?? "≈0.7%/°C above design temp"}. ` +
+    `Outage λ: ${fc?.channels?.outage?.source_lambda ?? "Choobineh & Mohagheghi (2015)"}. ` +
+    `Dispatch (전기본 / national plan) is a scenario input — the 전기본 figures are a pending data-sourcing task.`;
+
   const runDone = physRun?.status === "done";
-  const ready = runDone && !!profile.capex && !!profile.annual_ebitda;
+  const genReady =
+    !!profile.capacity_mw && !!profile.power_price && (!!profile.capacity_factor || !!profile.plant_fuel);
+  const ready =
+    runDone && !!profile.capex && (isPower ? genReady : !!profile.annual_ebitda);
   // steady-state annual carbon cost from the transition run (last horizon year), if present
   const transitionCost = transition?.total_cost_by_year?.length
     ? transition.total_cost_by_year[transition.total_cost_by_year.length - 1]
@@ -186,10 +201,72 @@ export function FinanceView({
 
       <div className="card">
         <div className="section-title">Project financial profile (portfolio default)</div>
+        <div className="form-row" style={{ marginTop: 8, alignItems: "center", gap: 8 }}>
+          <label className="hint" style={{ minWidth: 96 }}>
+            Financial model
+          </label>
+          <select
+            className="field-inline"
+            value={profile.financial_model ?? "generic"}
+            onChange={(e) => setProfile({ financial_model: e.target.value })}
+            aria-label="Financial model"
+          >
+            <option value="generic">Generic — damage (AAI) + carbon</option>
+            <option value="power_gen">Power generation — capacity factor</option>
+          </select>
+        </div>
         <div className="row2" style={{ marginTop: 8 }}>
           {numField("capex", `CAPEX (${cur})`, "1000000")}
-          {numField("annual_ebitda", `Annual EBITDA (${cur})`, "1000000")}
+          {!isPower && numField("annual_ebitda", `Annual EBITDA (${cur})`, "1000000")}
         </div>
+
+        {isPower && (
+          <>
+            <div className="section-title" style={{ marginTop: 12 }}>
+              Generation
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {numField("capacity_mw", "Capacity (MW)", "10")}
+              {numField("power_price", `Price (${cur}/MWh)`, "1")}
+              {numField("capacity_factor", "Capacity factor", "0.01")}
+              <div className="field">
+                <label>Fuel (CF default)</label>
+                <select
+                  className="field-inline"
+                  value={profile.plant_fuel ?? ""}
+                  onChange={(e) => setProfile({ plant_fuel: e.target.value || null })}
+                >
+                  <option value="">—</option>
+                  {fuels.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {numField("opex_per_mwh", `Var O&M (${cur}/MWh)`, "1")}
+              {numField("fixed_opex", `Fixed O&M (${cur}/yr)`, "100000")}
+            </div>
+            <div className="section-title" style={{ marginTop: 12 }}>
+              Stressed-scenario channels (fraction 0–1)
+            </div>
+            <p className="hint" style={{ marginTop: 2 }}>
+              How much each channel cuts the effective capacity factor under the scenario.
+              Dispatch is <strong>policy</strong> (전기본 / national plan); efficiency, water derate
+              and outage are <strong>physical</strong>. Damage (AAI) + carbon flow in automatically
+              from the runs.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {numField("dispatch_penalty", "Dispatch (policy)", "0.01")}
+              {numField("efficiency_loss", "Efficiency (heat)", "0.01")}
+              {numField("capacity_derate", "Water derate (drought)", "0.01")}
+              {numField("outage_rate", "Outage (wildfire/storm)", "0.01")}
+            </div>
+            <p className="hint" style={{ marginTop: 4 }}>
+              {channelSource}
+            </p>
+          </>
+        )}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
           {ADVANCED.map((f) => numField(f.key, f.label, f.step))}
         </div>
@@ -295,8 +372,12 @@ export function FinanceView({
             )}
           </button>
           {!runDone && <span className="hint">run a physical analysis first (Results tab)</span>}
-          {runDone && (!profile.capex || !profile.annual_ebitda) && (
-            <span className="hint">enter CAPEX + annual EBITDA</span>
+          {runDone && !ready && (
+            <span className="hint">
+              {isPower
+                ? "enter CAPEX + capacity (MW) + price + capacity factor (or fuel)"
+                : "enter CAPEX + annual EBITDA"}
+            </span>
           )}
         </div>
         {err && <div className="status-box error" style={{ marginTop: 8 }}>{err}</div>}
@@ -331,11 +412,32 @@ export function FinanceView({
             <Scenario label="Baseline" s={result.portfolio.baseline} />
             <Scenario label="Climate-stressed" s={result.portfolio.stressed} />
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>
-            Annual climate loss {money(result.total_physical_aai + result.transition_annual_cost, cur)} (physical AAI{" "}
-            {money(result.total_physical_aai, cur)} + transition {money(result.transition_annual_cost, cur)}) ·
-            NPV loss {money(result.portfolio.npv_loss, cur)} ({result.portfolio.npv_loss_pct_capex.toFixed(1)}% of CAPEX).
-          </p>
+          {result.financial_model === "power_gen" ? (
+            (() => {
+              const bd = result.portfolio_breakdown as PowerGenBreakdown;
+              const ch = bd.channels;
+              return (
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Annual EBITDA shock {money(result.portfolio.annual_climate_loss, cur)} · capacity
+                  factor {(bd.cf_baseline * 100).toFixed(1)}% → {(bd.cf_effective * 100).toFixed(1)}%
+                  · revenue {money(bd.revenue_baseline, cur)} → {money(bd.revenue_stressed, cur)} ·
+                  NPV loss {money(result.portfolio.npv_loss, cur)} (
+                  {result.portfolio.npv_loss_pct_capex.toFixed(1)}% of CAPEX).
+                  <br />
+                  Channels — dispatch {(ch.dispatch_penalty * 100).toFixed(0)}%, efficiency{" "}
+                  {(ch.efficiency_loss * 100).toFixed(0)}%, water derate{" "}
+                  {(ch.capacity_derate * 100).toFixed(0)}%, outage {(ch.outage_rate * 100).toFixed(0)}%
+                  · + carbon {money(bd.carbon_cost, cur)} + AAI {money(bd.annual_aai, cur)}.
+                </p>
+              );
+            })()
+          ) : (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Annual climate loss {money(result.total_physical_aai + result.transition_annual_cost, cur)} (physical AAI{" "}
+              {money(result.total_physical_aai, cur)} + transition {money(result.transition_annual_cost, cur)}) ·
+              NPV loss {money(result.portfolio.npv_loss, cur)} ({result.portfolio.npv_loss_pct_capex.toFixed(1)}% of CAPEX).
+            </p>
+          )}
 
           {result.methods_compared && result.methods_compared.length > 1 && (
             <div style={{ marginTop: 12 }}>

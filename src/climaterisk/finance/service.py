@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from climaterisk.core.entities import FinancialProfile, Portfolio
-from climaterisk.finance import core
+from climaterisk.finance import core, models
 
 
 def _defaults(ref: dict[str, Any]) -> dict[str, float]:
@@ -39,6 +39,87 @@ def resolve_profile(
         baseline_spread_bps=pick("baseline_spread_bps", d["baseline_spread_bps"]),
         baseline_equity_rate=pick("baseline_equity_rate", d["baseline_equity_rate"]),
     )
+
+
+def _pick(attr: str, *sources: FinancialProfile | None) -> Any:
+    """First non-None value of ``attr`` across the profiles (override → fallback)."""
+    for s in sources:
+        v = getattr(s, attr, None) if s else None
+        if v is not None:
+            return v
+    return None
+
+
+def resolve_generation(
+    primary: FinancialProfile | None,
+    fallback: FinancialProfile | None,
+    channels_ref: dict[str, Any],
+) -> models.GenerationInputs | None:
+    """Build generation economics (override → fallback → fuel/library defaults). Returns None
+    if capacity, price or capacity factor cannot be resolved (so the caller falls back)."""
+    gd = channels_ref.get("generation_defaults", {})
+    cap = _pick("capacity_mw", primary, fallback)
+    price = _pick("power_price", primary, fallback)
+    cf = _pick("capacity_factor", primary, fallback)
+    if cf is None:
+        fuel = _pick("plant_fuel", primary, fallback)
+        if fuel:
+            cf = gd.get("capacity_factor_by_fuel", {}).get(fuel)
+    if cap is None or price is None or cf is None:
+        return None
+    var = _pick("opex_per_mwh", primary, fallback)
+    if var is None:
+        var = float(gd.get("opex_per_mwh", {}).get("value", 0.0))
+    return models.GenerationInputs(
+        capacity_mw=float(cap),
+        power_price=float(price),
+        capacity_factor=float(cf),
+        fixed_opex=float(_pick("fixed_opex", primary, fallback) or 0.0),
+        opex_per_mwh=float(var),
+    )
+
+
+def resolve_channels(
+    primary: FinancialProfile | None,
+    fallback: FinancialProfile | None,
+    channels_ref: dict[str, Any],
+) -> models.ChannelMagnitudes:
+    """Resolve stressed-scenario channel magnitudes (override → fallback → cited defaults)."""
+    ch = channels_ref.get("channels", {})
+
+    def resolve(attr: str, group: str, key: str) -> float:
+        v = _pick(attr, primary, fallback)
+        if v is not None:
+            return float(v)
+        return float(ch.get(group, {}).get(key, 0.0))
+
+    return models.ChannelMagnitudes(
+        dispatch_penalty=resolve("dispatch_penalty", "dispatch", "default_penalty"),
+        outage_rate=resolve("outage_rate", "outage", "default_rate"),
+        capacity_derate=resolve("capacity_derate", "water_derate", "default_derate"),
+        efficiency_loss=resolve("efficiency_loss", "efficiency", "default_loss"),
+    )
+
+
+def ebitda_pair(
+    primary: FinancialProfile | None,
+    fallback: FinancialProfile | None,
+    core_profile: core.FinancialProfile,
+    annual_aai: float,
+    carbon_cost: float,
+    channels_ref: dict[str, Any],
+) -> models.EbitdaPair:
+    """Produce the (baseline, stressed) EBITDA pair via the selected asset financial model.
+
+    ``power_gen`` builds EBITDA from generation and stresses the capacity factor; any other
+    model (or incomplete generation inputs) falls back to ``generic`` (EBITDA − AAI − carbon)."""
+    model = _pick("financial_model", primary, fallback) or models.GENERIC
+    if model == models.POWER_GEN:
+        gen = resolve_generation(primary, fallback, channels_ref)
+        if gen is not None:
+            ch = resolve_channels(primary, fallback, channels_ref)
+            return models.power_gen_pair(gen, ch, annual_aai=annual_aai, carbon_cost=carbon_cost)
+    return models.generic_pair(core_profile.annual_ebitda, annual_aai + carbon_cost)
 
 
 def selected_method_ids(profile: FinancialProfile | None, ref: dict[str, Any]) -> list[str]:
@@ -113,13 +194,23 @@ def compute_finance(
     run_output: dict[str, Any],
     transition_annual_cost: float,
     ref: dict[str, Any],
+    channels_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Portfolio-level + per-asset-override climate-risk-premium assessment for a run."""
+    """Portfolio-level + per-asset-override climate-risk-premium assessment for a run.
+
+    ``channels_ref`` is the ``finance_channels`` library, needed only by the power-generation
+    model; the generic model ignores it."""
+    channels_ref = channels_ref or {}
     aai = per_asset_aai(run_output)
     total_physical = sum(aai.values())
     port_ep = portfolio.run_config.financial_profile
-    port_loss = total_physical + max(0.0, transition_annual_cost)
+    transition = max(0.0, transition_annual_cost)
     port_profile = resolve_profile(port_ep, None, ref)
+
+    # The asset financial model decides the (baseline, stressed) EBITDA pair — generic
+    # (EBITDA − AAI − carbon) or power_gen (generation through the operational channels).
+    # Compute it once; the rating methodology only changes the DSCR→rating grid downstream.
+    port_pair = ebitda_pair(port_ep, None, port_profile, total_physical, transition, channels_ref)
 
     # The user may select several DSCR→rating "house views" to compare. Assess the portfolio
     # under each (swapping the grid into an effective ref — core reads rating_dscr_thresholds);
@@ -135,7 +226,9 @@ def compute_finance(
                 "label": r["label"],
                 "code": r["code"],
                 "source": r["source"],
-                "scenario": core.assess(port_profile, port_loss, eff),
+                "scenario": core.assess_ebitda(
+                    port_profile, port_pair.baseline, port_pair.stressed, eff
+                ),
             }
         )
 
@@ -147,23 +240,28 @@ def compute_finance(
     for a in portfolio.assets:
         if a.financial_profile is None:
             continue  # only assets with their own profile get a per-asset CRP (under the primary)
-        res = core.assess(
-            resolve_profile(a.financial_profile, port_ep, ref), aai.get(a.id, 0.0), eff_ref
+        a_profile = resolve_profile(a.financial_profile, port_ep, ref)
+        # Per-asset carbon is not split out of the portfolio total yet → 0 here.
+        a_pair = ebitda_pair(
+            a.financial_profile, port_ep, a_profile, aai.get(a.id, 0.0), 0.0, channels_ref
         )
+        res = core.assess_ebitda(a_profile, a_pair.baseline, a_pair.stressed, eff_ref)
         per_asset.append(
-            {"id": a.id, "name": a.name, "annual_climate_loss": aai.get(a.id, 0.0), **res}
+            {"id": a.id, "name": a.name, "model": a_pair.breakdown.get("model"), **res}
         )
 
     cur = portfolio.assets[0].currency if portfolio.assets else "USD"
     return {
         "currency": cur,
         "total_physical_aai": total_physical,
-        "transition_annual_cost": max(0.0, transition_annual_cost),
+        "transition_annual_cost": transition,
         "rating_method": primary["method"],
         "rating_method_label": primary["label"],
         "rating_method_source": primary["source"],
         "rating_thresholds": primary["thresholds"],
         "methods_compared": methods_compared,
+        "financial_model": port_pair.breakdown.get("model"),
+        "portfolio_breakdown": port_pair.breakdown,
         "portfolio": portfolio_result,
         "per_asset": per_asset,
         "detail": (

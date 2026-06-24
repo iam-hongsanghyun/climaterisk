@@ -120,30 +120,52 @@ def _scenario(p: FinancialProfile, annual_ebitda: float, ref: dict[str, Any]) ->
     )
 
 
-def assess(
-    profile: FinancialProfile, annual_climate_loss: float, ref: dict[str, Any]
+def assess_ebitda(
+    profile: FinancialProfile,
+    baseline_ebitda: float,
+    stressed_ebitda: float,
+    ref: dict[str, Any],
 ) -> dict[str, Any]:
-    """Full assessment: baseline vs climate-stressed cashflow → NPV/IRR/DSCR/rating + CRP.
+    """Assess from an explicit (baseline, stressed) EBITDA pair → NPV/IRR/DSCR/rating + CRP.
+
+    This is the sector-agnostic engine: an asset financial model (see
+    :mod:`climaterisk.finance.models`) decides how the two EBITDA levels are produced, and
+    this runs the same cashflow → rating → spread chain on each.
 
     Args:
-        profile: the project's financial profile.
-        annual_climate_loss: expected annual loss (physical AAI + transition carbon cost),
-            same currency as ``annual_ebitda``; reduces stressed EBITDA.
+        profile: the project's financial profile (capex, debt, financing terms).
+        baseline_ebitda: no-climate-stress annual EBITDA.
+        stressed_ebitda: climate-stressed annual EBITDA (≤ baseline).
         ref: the ``finance_reference`` library (rating grid + spread table).
 
     Returns a dict with baseline/stressed outcomes, the NPV loss, and the CRP in bps.
     """
-    baseline = _scenario(profile, profile.annual_ebitda, ref)
-    stressed_ebitda = profile.annual_ebitda - max(0.0, annual_climate_loss)
+    baseline = _scenario(profile, baseline_ebitda, ref)
     stressed = _scenario(profile, stressed_ebitda, ref)
     crp_bps = stressed.spread_bps - baseline.spread_bps  # counterfactual climate premium
     npv_loss = baseline.npv - stressed.npv
     return {
         "baseline": asdict(baseline),
         "stressed": asdict(stressed),
-        "annual_climate_loss": float(annual_climate_loss),
+        "annual_climate_loss": float(baseline_ebitda - stressed_ebitda),
         "npv_loss": float(npv_loss),
         "npv_loss_pct_capex": float(npv_loss / profile.capex * 100.0) if profile.capex > 0 else 0.0,
         "crp_bps": float(crp_bps),
         "downgrade": baseline.rating != stressed.rating,
     }
+
+
+def assess(
+    profile: FinancialProfile, annual_climate_loss: float, ref: dict[str, Any]
+) -> dict[str, Any]:
+    """Generic assessment: stressed EBITDA = baseline − expected annual climate loss.
+
+    Thin wrapper over :func:`assess_ebitda` for the generic (non-generation) model, where the
+    climate shock (physical AAI + transition carbon cost) simply reduces a flat EBITDA.
+    """
+    return assess_ebitda(
+        profile,
+        profile.annual_ebitda,
+        profile.annual_ebitda - max(0.0, annual_climate_loss),
+        ref,
+    )

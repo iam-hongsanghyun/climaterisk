@@ -147,6 +147,80 @@ def test_service_compares_multiple_methods() -> None:
     assert all("baseline" in m["scenario"] and "crp_bps" in m["scenario"] for m in compared)
 
 
+def test_channel_math() -> None:
+    from climaterisk.finance import channels
+
+    # outage = freq * (1 - e^(-λ t)) * dur/8760 ; λ=0.20,t=2 → P=1-e^-0.4≈0.3297
+    o = channels.outage_rate(1.0, 0.20, 2.0, 48.0)
+    assert math.isclose(o, (1 - math.exp(-0.4)) * 48.0 / 8760.0, rel_tol=1e-9)
+    # efficiency: 10°C above design at 0.7%/°C = 7%
+    assert math.isclose(channels.efficiency_loss(25.0, 15.0, 0.007), 0.07, rel_tol=1e-9)
+    # no loss below design temp
+    assert channels.efficiency_loss(10.0, 15.0, 0.007) == 0.0
+    # composition: 0.8 base × (1-0.1)(1-0.05) = 0.684
+    cf = channels.effective_capacity_factor(0.8, dispatch_penalty=0.1, efficiency_loss=0.05)
+    assert math.isclose(cf, 0.8 * 0.9 * 0.95, rel_tol=1e-9)
+    # water cap binds
+    assert channels.effective_capacity_factor(0.8, water_constrained_cf=0.3) == 0.3
+
+
+def test_power_gen_pair_builds_ebitda_from_generation() -> None:
+    from climaterisk.finance import models
+
+    gen = models.GenerationInputs(
+        capacity_mw=100.0, power_price=80.0, capacity_factor=0.5, opex_per_mwh=8.0
+    )
+    # baseline: 100 MW × 8760 × 0.5 = 438,000 MWh × $80 = $35.04M rev − $8/MWh opex
+    no_stress = models.power_gen_pair(gen, models.ChannelMagnitudes())
+    gen0 = 100.0 * 8760.0 * 0.5
+    assert math.isclose(no_stress.baseline, gen0 * 80.0 - 8.0 * gen0, rel_tol=1e-9)
+    # with no channels, no carbon, no AAI → stressed == baseline (clean recovery)
+    assert math.isclose(no_stress.stressed, no_stress.baseline, rel_tol=1e-9)
+    # dispatch + efficiency stress + carbon + AAI all reduce the stressed EBITDA
+    stressed = models.power_gen_pair(
+        gen,
+        models.ChannelMagnitudes(dispatch_penalty=0.2, efficiency_loss=0.05),
+        annual_aai=1e6,
+        carbon_cost=2e6,
+    )
+    assert stressed.stressed < stressed.baseline
+    assert stressed.breakdown["cf_effective"] < stressed.breakdown["cf_baseline"]
+    assert stressed.climate_loss > 0
+
+
+def test_service_power_gen_model() -> None:
+    from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
+    from climaterisk.data.libraries import load_libraries
+    from climaterisk.finance import service
+
+    channels_ref = load_libraries()["finance_channels"]
+    a = Asset(name="Plant", lat=35.0, lon=139.0, sector="utilities", value=1e9, currency="USD")
+    port = Portfolio(
+        assets=[a],
+        run_config=RunConfig(
+            financial_profile=FinancialProfile(
+                capex=2e9,
+                financial_model="power_gen",
+                capacity_mw=500.0,
+                power_price=90.0,
+                capacity_factor=0.55,
+                dispatch_penalty=0.15,
+                efficiency_loss=0.03,
+            )
+        ),
+    )
+    run_output = {
+        "results": [{"status": "ok", "peril": "tc", "per_asset": [{"id": a.id, "eai": 5e6}]}]
+    }
+    res = service.compute_finance(
+        port, run_output, transition_annual_cost=1e7, ref=_ref(), channels_ref=channels_ref
+    )
+    assert res["financial_model"] == "power_gen"
+    bd = res["portfolio_breakdown"]
+    assert bd["cf_effective"] < bd["cf_baseline"]  # channels bit
+    assert res["portfolio"]["crp_bps"] >= 0  # stressed cashflow ≥ as risky
+
+
 def test_service_aggregates_run_and_overrides() -> None:
     from climaterisk.core.entities import Asset, FinancialProfile, Portfolio, RunConfig
     from climaterisk.finance import service

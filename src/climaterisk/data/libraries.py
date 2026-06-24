@@ -24,6 +24,7 @@ _FILES = {
     "carbon_prices": "ngfs_carbon_prices.json",
     "data_sources": "data_sources.json",
     "finance_reference": "finance_reference.json",
+    "finance_channels": "finance_channels.json",
 }
 
 

@@ -43,6 +43,20 @@ export interface FinancialProfile {
   rating_method?: string | null; // single/primary id (back-compat)
   rating_methods?: string[] | null; // selected ids to compare; first is primary
   custom_rating_thresholds?: RatingThreshold[] | null;
+  // Asset financial model: "generic" (default) or "power_gen" (power plant).
+  financial_model?: string | null;
+  // power_gen generation economics
+  capacity_mw?: number | null;
+  power_price?: number | null;
+  capacity_factor?: number | null;
+  plant_fuel?: string | null;
+  fixed_opex?: number | null;
+  opex_per_mwh?: number | null;
+  // power_gen stressed-scenario channel magnitudes (fractions 0..1)
+  dispatch_penalty?: number | null;
+  outage_rate?: number | null;
+  capacity_derate?: number | null;
+  efficiency_loss?: number | null;
 }
 export interface RunConfig {
   perils: string[];
@@ -71,6 +85,24 @@ export interface FinanceScenario {
 export interface FinanceAssetResult extends FinanceScenario {
   id: string;
   name: string;
+  model?: string | null;
+}
+export interface PowerGenBreakdown {
+  model: string;
+  cf_baseline: number;
+  cf_effective: number;
+  generation_mwh_baseline: number;
+  generation_mwh_stressed: number;
+  revenue_baseline: number;
+  revenue_stressed: number;
+  carbon_cost: number;
+  annual_aai: number;
+  channels: {
+    dispatch_penalty: number;
+    outage_rate: number;
+    capacity_derate: number;
+    efficiency_loss: number;
+  };
 }
 export interface FinanceMethodComparison {
   method: string;
@@ -88,6 +120,8 @@ export interface FinanceResult {
   rating_method_source: string;
   rating_thresholds: RatingThreshold[];
   methods_compared: FinanceMethodComparison[];
+  financial_model?: string | null;
+  portfolio_breakdown?: PowerGenBreakdown | { model: string; annual_climate_loss: number };
   portfolio: FinanceScenario;
   per_asset: FinanceAssetResult[];
   detail: string;
@@ -219,6 +253,20 @@ export interface Libraries {
     >;
     rating_spreads_bps: { rating: string; spread_bps: number; source: string }[];
     financing_defaults: Record<string, { value: number; source: string }>;
+  };
+  finance_channels?: {
+    generation_defaults?: {
+      capacity_factor_by_fuel?: Record<string, number>;
+      opex_per_mwh?: { value?: number; source?: string };
+    };
+    channels?: {
+      dispatch?: {
+        trajectories?: Record<string, { label?: string; status?: string; source?: string }>;
+      };
+      efficiency?: { loss_per_degc?: { value?: number; source?: string } };
+      outage?: { source_lambda?: string };
+      water_derate?: { source?: string };
+    };
   };
   carbon_prices?: { prices: Record<string, Record<string, number>> };
   data_sources: DataSourcesLib;

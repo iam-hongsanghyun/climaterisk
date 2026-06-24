@@ -63,6 +63,41 @@ class FinancialProfile(BaseModel):
         description="User-defined DSCR→rating grid; used when 'custom' is selected.",
     )
 
+    # Asset financial model — the one sector-specific seam. "generic" (default) reduces a flat
+    # EBITDA by the climate loss; "power_gen" builds EBITDA from generation and stresses the
+    # capacity factor through the operational channels (see finance/models.py).
+    financial_model: str | None = Field(
+        default=None,
+        description="Financial model id: 'generic' (default, any sector) or 'power_gen' "
+        "(power plant — uses the generation fields and operational channels below).",
+    )
+    # --- power_gen generation economics (only used when financial_model == 'power_gen') ---
+    capacity_mw: float | None = Field(default=None, ge=0.0, description="Nameplate capacity (MW).")
+    power_price: float | None = Field(
+        default=None, ge=0.0, description="Realised power price per MWh."
+    )
+    capacity_factor: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Baseline (no-stress) capacity factor."
+    )
+    plant_fuel: str | None = Field(
+        default=None, description="Fuel/type (coal, lng, nuclear, …) — seeds a default CF."
+    )
+    fixed_opex: float | None = Field(default=None, ge=0.0, description="Annual fixed O&M.")
+    opex_per_mwh: float | None = Field(default=None, ge=0.0, description="Variable O&M per MWh.")
+    # --- power_gen stressed-scenario channel magnitudes (fractions in [0, 1]) ---
+    dispatch_penalty: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Policy capacity-factor reduction (dispatch)."
+    )
+    outage_rate: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Forced-outage fraction (wildfire/storm)."
+    )
+    capacity_derate: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Capacity/water derate (drought)."
+    )
+    efficiency_loss: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Efficiency derate (heat)."
+    )
+
 
 class Asset(BaseModel):
     """A located facility — one CLIMADA exposure point (or footprint)."""

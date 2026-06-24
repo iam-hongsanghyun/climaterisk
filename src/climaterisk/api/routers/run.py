@@ -211,13 +211,29 @@ def compute_finance_route(
     if run is None or run.session_id != session_id or run.status != "done" or not run.output:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="run not finished")
     prof = portfolio.run_config.financial_profile
-    if prof is None or not prof.capex or not prof.annual_ebitda:
+    is_power = prof is not None and prof.financial_model == "power_gen"
+    if prof is None or not prof.capex:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="set a financial profile (CAPEX) in the Finance tab first",
+        )
+    if is_power and not (
+        prof.capacity_mw and prof.power_price and (prof.capacity_factor or prof.plant_fuel)
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="power-generation model needs capacity (MW), price (per MWh) and a "
+            "capacity factor (or fuel type)",
+        )
+    if not is_power and not prof.annual_ebitda:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail="set a financial profile (CAPEX + annual EBITDA) in the Finance tab first",
         )
-    ref = load_libraries()["finance_reference"]
-    return compute_finance(portfolio, run.output, transition_cost, ref)
+    libs = load_libraries()
+    return compute_finance(
+        portfolio, run.output, transition_cost, libs["finance_reference"], libs["finance_channels"]
+    )
 
 
 def _per_asset_rows(output: dict) -> list[dict]:  # type: ignore[type-arg]
