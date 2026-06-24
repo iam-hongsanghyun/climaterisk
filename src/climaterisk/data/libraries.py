@@ -23,6 +23,7 @@ _FILES = {
     "impf_presets": "impact_function_presets.json",
     "carbon_prices": "ngfs_carbon_prices.json",
     "data_sources": "data_sources.json",
+    "finance_reference": "finance_reference.json",
 }
 
 
