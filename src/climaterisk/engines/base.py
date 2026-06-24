@@ -345,6 +345,20 @@ class LitPopRequest(BaseModel):
         )
 
 
+# --- Hazard layer preview (render a catalog hazard's intensity field to a map raster) ---
+
+
+class HazardPreviewRequest(BaseModel):
+    """Inputs to render a local-catalog hazard's intensity field as a map raster PNG."""
+
+    mode: str = "hazard_preview"
+    session_id: str
+    peril: str
+    scenario: str = "historical"
+    region: str = "global"
+    year: int | None = None
+
+
 # --- Data ingestion (download & refine real sources into the local catalog) ---
 
 

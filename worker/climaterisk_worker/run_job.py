@@ -66,6 +66,11 @@ def run(run_dir: Path) -> dict[str, Any]:
                 from climaterisk_worker.forecast import compute_forecast
 
                 output = compute_forecast(request)
+            elif mode == "hazard_preview":
+                from climaterisk_worker.hazard_preview import compute_hazard_preview
+
+                request["out_dir"] = str(run_dir)  # the worker writes preview.png here
+                output = compute_hazard_preview(request)
             else:
                 output = compute_physical_risk(request)
         except Exception as exc:

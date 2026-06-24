@@ -57,6 +57,24 @@ export async function getHazardCatalog(): Promise<HazardCatalog> {
   return http<HazardCatalog>("/api/hazard-catalog");
 }
 
+/** Submit a hazard-layer raster preview for a catalog entry (peril/scenario/region/year). */
+export async function submitHazardPreview(
+  sessionId: string,
+  peril: string,
+  scenario: string,
+  region: string,
+  year: number | null,
+): Promise<Run> {
+  const qs = new URLSearchParams({ peril, scenario, region });
+  if (year != null) qs.set("year", String(year));
+  return http<Run>(`/api/session/${sessionId}/hazard-preview?${qs.toString()}`, { method: "POST" });
+}
+
+/** URL of the rendered hazard-preview PNG for a finished preview run. */
+export function hazardPreviewImageUrl(sessionId: string, runId: string): string {
+  return `/api/session/${sessionId}/run/${runId}/preview.png`;
+}
+
 export async function submitRun(sessionId: string): Promise<Run> {
   return http<Run>(`/api/session/${sessionId}/run`, { method: "POST" });
 }

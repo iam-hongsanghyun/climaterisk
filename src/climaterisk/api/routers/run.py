@@ -11,9 +11,11 @@ import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from climaterisk.api.deps import get_run_manager, get_session_store
+from climaterisk.config import get_settings
 from climaterisk.data.session_store import SessionStore
 from climaterisk.engines.base import MeasureSpec
 from climaterisk.runs.manager import RunManager
@@ -82,6 +84,31 @@ def submit_litpop(
     if not country or len(country) != 3:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="country must be an ISO3 code")
     return manager.submit_litpop(portfolio, country.upper(), source, peril)
+
+
+@router.post("/{session_id}/hazard-preview", response_model=Run)
+def submit_hazard_preview(
+    session_id: str,
+    peril: str,
+    store: StoreDep,
+    manager: ManagerDep,
+    scenario: str = "historical",
+    region: str = "global",
+    year: int | None = None,
+) -> Run:
+    """Render a local-catalog hazard's intensity field to a map raster (polled via run-status)."""
+    if store.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="session not found")
+    return manager.submit_hazard_preview(session_id, peril, scenario, region, year)
+
+
+@router.get("/{session_id}/run/{run_id}/preview.png")
+def get_hazard_preview_image(session_id: str, run_id: str) -> FileResponse:
+    """Serve the rendered hazard-preview PNG for a finished hazard-preview run."""
+    png = get_settings().runs_path / run_id / "preview.png"
+    if not png.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no preview image for this run")
+    return FileResponse(png, media_type="image/png")
 
 
 @router.post("/{session_id}/forecast", response_model=Run)

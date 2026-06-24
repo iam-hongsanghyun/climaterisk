@@ -1,8 +1,27 @@
-import { useState } from "react";
-import { CircleMarker, MapContainer, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
-import type { Asset, Libraries, LitPopResult, Portfolio, Run } from "../types";
+import { useEffect, useState } from "react";
+import {
+  CircleMarker,
+  ImageOverlay,
+  MapContainer,
+  TileLayer,
+  Tooltip,
+  useMapEvents,
+} from "react-leaflet";
+import type {
+  Asset,
+  HazardCatalog,
+  HazardCatalogEntry,
+  HazardPreviewResult,
+  Libraries,
+  LitPopResult,
+  Portfolio,
+  Run,
+} from "../types";
 import { AssetEditor } from "../components/AssetEditor";
+import { getHazardCatalog, getRun, hazardPreviewImageUrl, submitHazardPreview } from "../lib/api";
 import { money } from "../lib/format";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function newAsset(lat: number, lon: number): Asset {
   return {
@@ -50,6 +69,48 @@ export function MapView({
   const [litpopCountry, setLitpopCountry] = useState("JPN");
   const [litpopSource, setLitpopSource] = useState("litpop");
   const [litpopPeril, setLitpopPeril] = useState("tropical_cyclone");
+
+  // Hazard-layer preview (raster overlay of the raw hazard intensity, pre-calculation).
+  const [catalog, setCatalog] = useState<HazardCatalog | null>(null);
+  const [layerKey, setLayerKey] = useState("");
+  const [layer, setLayer] = useState<{ data: HazardPreviewResult; url: string } | null>(null);
+  const [layerBusy, setLayerBusy] = useState(false);
+  const [layerErr, setLayerErr] = useState<string | null>(null);
+  useEffect(() => {
+    getHazardCatalog()
+      .then(setCatalog)
+      .catch(() => setCatalog(null));
+  }, []);
+
+  const entryKey = (e: HazardCatalogEntry) =>
+    `${e.peril}|${e.climate_scenario}|${e.region}|${e.year ?? ""}`;
+
+  async function showLayer(key: string) {
+    setLayerKey(key);
+    setLayer(null);
+    setLayerErr(null);
+    if (!key) return;
+    const e = catalog?.entries.find((x) => entryKey(x) === key);
+    if (!e) return;
+    setLayerBusy(true);
+    try {
+      let r = await submitHazardPreview(model.id, e.peril, e.climate_scenario, e.region, e.year);
+      for (let i = 0; i < 120 && (r.status === "queued" || r.status === "running"); i++) {
+        await sleep(1500);
+        r = await getRun(model.id, r.id);
+      }
+      const out = r.output as HazardPreviewResult | null;
+      if (r.status === "done" && out?.status === "ok") {
+        setLayer({ data: out, url: hazardPreviewImageUrl(model.id, r.id) });
+      } else {
+        setLayerErr(out?.detail ?? r.detail ?? "Preview failed.");
+      }
+    } catch (err) {
+      setLayerErr(String(err));
+    } finally {
+      setLayerBusy(false);
+    }
+  }
   const selected = model.assets.find((a) => a.id === selectedId) ?? null;
   const litpop = litpopRun?.status === "done" ? (litpopRun.output as LitPopResult | null) : null;
   const litpopRunning = litpopRun?.status === "queued" || litpopRun?.status === "running";
@@ -76,6 +137,9 @@ export function MapView({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <ClickToAdd onAdd={addAsset} />
+          {layer && (
+            <ImageOverlay url={layer.url} bounds={layer.data.bounds} opacity={0.75} zIndex={400} />
+          )}
           {model.assets.map((a) => (
             <CircleMarker
               key={a.id}
@@ -108,6 +172,60 @@ export function MapView({
           />
         ) : (
           <>
+            {catalog && catalog.entries.length > 0 && (
+              <div style={{ marginBottom: 4 }}>
+                <div className="section-title">Hazard layer (preview)</div>
+                <p className="hint">
+                  See a peril's raw intensity footprint on the map — before any run — so you can
+                  tell whether your assets fall inside it.
+                </p>
+                <div className="form-row" style={{ marginTop: 6 }}>
+                  <select
+                    className="field-inline"
+                    value={layerKey}
+                    onChange={(e) => showLayer(e.target.value)}
+                    disabled={layerBusy}
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <option value="">No layer</option>
+                    {catalog.entries.map((e) => (
+                      <option key={entryKey(e)} value={entryKey(e)}>
+                        {e.peril.replace(/_/g, " ")} · {e.region} · {e.climate_scenario}
+                        {e.year ? ` ${e.year}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {layerBusy && <span className="spinner" />}
+                </div>
+                {layerErr && (
+                  <div className="status-box error" style={{ marginTop: 6 }}>
+                    {layerErr}
+                  </div>
+                )}
+                {layer && (
+                  <div style={{ marginTop: 8 }}>
+                    <div
+                      style={{
+                        height: 12,
+                        borderRadius: 3,
+                        background:
+                          "linear-gradient(90deg,#30123b,#28829b,#a2fc3c,#fb8023,#7a0403)",
+                      }}
+                    />
+                    <div
+                      className="hint"
+                      style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}
+                    >
+                      <span>{layer.data.vmin}</span>
+                      <span>
+                        {layer.data.peril.replace(/_/g, " ")} ({layer.data.unit})
+                      </span>
+                      <span>{layer.data.vmax}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="section-title">Facilities</div>
             <p className="hint">
               Click anywhere on the map to place a facility. Select one to edit its sector,

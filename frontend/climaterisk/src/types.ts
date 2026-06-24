@@ -191,6 +191,19 @@ export interface WarnLevels {
   thresholds: number[];
   unit: string;
 }
+export interface HazardPreviewResult {
+  status: string;
+  peril: string;
+  scenario?: string;
+  region?: string;
+  unit: string;
+  vmin: number;
+  vmax: number;
+  colormap?: string;
+  bounds: [[number, number], [number, number]]; // [[south,west],[north,east]]
+  n_centroids?: number;
+  detail: string | null;
+}
 export interface PhysicalRunResult {
   peril: string;
   status: string;
