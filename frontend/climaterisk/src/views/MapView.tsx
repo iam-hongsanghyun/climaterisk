@@ -23,6 +23,28 @@ import { money } from "../lib/format";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Turbo colormap stops (match the worker's hazard raster + the legend gradient).
+const TURBO_CSS = "linear-gradient(90deg,#30123b,#28829b,#a2fc3c,#fb8023,#7a0403)";
+const TURBO_STOPS = [
+  [48, 18, 59],
+  [40, 130, 155],
+  [162, 252, 60],
+  [251, 128, 35],
+  [122, 4, 3],
+];
+/** Turbo color at fraction f∈[0,1] — used to color exposure markers by value. */
+function turboAt(f: number): string {
+  const x = Math.max(0, Math.min(1, f)) * (TURBO_STOPS.length - 1);
+  const i = Math.floor(x);
+  const t = x - i;
+  const a = TURBO_STOPS[i];
+  const b = TURBO_STOPS[Math.min(i + 1, TURBO_STOPS.length - 1)];
+  const c = a.map((v, k) => Math.round(v + (b[k] - v) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+const EXPOSURE_LAYER = "__exposure__";
+
 function newAsset(lat: number, lon: number): Asset {
   return {
     id: crypto.randomUUID(),
@@ -76,6 +98,7 @@ export function MapView({
   const [layer, setLayer] = useState<{ data: HazardPreviewResult; url: string } | null>(null);
   const [layerBusy, setLayerBusy] = useState(false);
   const [layerErr, setLayerErr] = useState<string | null>(null);
+  const [opacity, setOpacity] = useState(0.75);
   useEffect(() => {
     getHazardCatalog()
       .then(setCatalog)
@@ -89,7 +112,7 @@ export function MapView({
     setLayerKey(key);
     setLayer(null);
     setLayerErr(null);
-    if (!key) return;
+    if (!key || key === EXPOSURE_LAYER) return; // exposure layer is client-side (asset values)
     const e = catalog?.entries.find((x) => entryKey(x) === key);
     if (!e) return;
     setLayerBusy(true);
@@ -115,6 +138,13 @@ export function MapView({
   const litpop = litpopRun?.status === "done" ? (litpopRun.output as LitPopResult | null) : null;
   const litpopRunning = litpopRun?.status === "queued" || litpopRun?.status === "running";
 
+  // Exposure-value layer: color asset markers by value (client-side; no run needed).
+  const exposureLayer = layerKey === EXPOSURE_LAYER;
+  const vals = model.assets.map((a) => a.value).filter((v) => v > 0);
+  const vMin = vals.length ? Math.min(...vals) : 0;
+  const vMax = vals.length ? Math.max(...vals) : 0;
+  const valueFrac = (v: number) => (vMax > vMin ? (v - vMin) / (vMax - vMin) : 0.5);
+
   const addAsset = (lat: number, lon: number) => {
     const asset = newAsset(lat, lon);
     patchModel({ assets: [...model.assets, asset] });
@@ -138,7 +168,13 @@ export function MapView({
           />
           <ClickToAdd onAdd={addAsset} />
           {layer && (
-            <ImageOverlay url={layer.url} bounds={layer.data.bounds} opacity={0.75} zIndex={400} />
+            <ImageOverlay
+              key={layer.url}
+              url={layer.url}
+              bounds={layer.data.bounds}
+              opacity={opacity}
+              zIndex={400}
+            />
           )}
           {model.assets.map((a) => (
             <CircleMarker
@@ -146,15 +182,26 @@ export function MapView({
               center={[a.lat, a.lon]}
               radius={a.id === selectedId ? 11 : 8}
               pathOptions={{
-                color: a.id === selectedId ? "#3aa0ff" : "#2f9e8f",
-                fillColor: a.id === selectedId ? "#3aa0ff" : "#2f9e8f",
-                fillOpacity: 0.7,
+                color:
+                  a.id === selectedId
+                    ? "#3aa0ff"
+                    : exposureLayer && a.value > 0
+                      ? turboAt(valueFrac(a.value))
+                      : "#2f9e8f",
+                fillColor:
+                  a.id === selectedId
+                    ? "#3aa0ff"
+                    : exposureLayer && a.value > 0
+                      ? turboAt(valueFrac(a.value))
+                      : "#2f9e8f",
+                fillOpacity: exposureLayer ? 0.85 : 0.7,
                 weight: 2,
               }}
               eventHandlers={{ click: () => setSelectedId(a.id) }}
             >
               <Tooltip>
                 {a.name} · {a.sector}
+                {exposureLayer ? ` · ${money(a.value, a.currency)}` : ""}
               </Tooltip>
             </CircleMarker>
           ))}
@@ -172,12 +219,12 @@ export function MapView({
           />
         ) : (
           <>
-            {catalog && catalog.entries.length > 0 && (
+            {((catalog?.entries.length ?? 0) > 0 || model.assets.length > 0) && (
               <div style={{ marginBottom: 4 }}>
-                <div className="section-title">Hazard layer (preview)</div>
+                <div className="section-title">Map layer (preview)</div>
                 <p className="hint">
-                  See a peril's raw intensity footprint on the map — before any run — so you can
-                  tell whether your assets fall inside it.
+                  Color the map by a raw value — before any run — so you can see what's there:
+                  a peril's hazard footprint, or your exposure by value.
                 </p>
                 <div className="form-row" style={{ marginTop: 6 }}>
                   <select
@@ -188,7 +235,10 @@ export function MapView({
                     style={{ flex: 1, minWidth: 0 }}
                   >
                     <option value="">No layer</option>
-                    {catalog.entries.map((e) => (
+                    {model.assets.length > 0 && (
+                      <option value={EXPOSURE_LAYER}>Exposure value (your assets)</option>
+                    )}
+                    {(catalog?.entries ?? []).map((e) => (
                       <option key={entryKey(e)} value={entryKey(e)}>
                         {e.peril.replace(/_/g, " ")} · {e.region} · {e.climate_scenario}
                         {e.year ? ` ${e.year}` : ""}
@@ -204,14 +254,7 @@ export function MapView({
                 )}
                 {layer && (
                   <div style={{ marginTop: 8 }}>
-                    <div
-                      style={{
-                        height: 12,
-                        borderRadius: 3,
-                        background:
-                          "linear-gradient(90deg,#30123b,#28829b,#a2fc3c,#fb8023,#7a0403)",
-                      }}
-                    />
+                    <div style={{ height: 12, borderRadius: 3, background: TURBO_CSS }} />
                     <div
                       className="hint"
                       style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}
@@ -221,6 +264,31 @@ export function MapView({
                         {layer.data.peril.replace(/_/g, " ")} ({layer.data.unit})
                       </span>
                       <span>{layer.data.vmax}</span>
+                    </div>
+                    <label className="hint" style={{ display: "block", marginTop: 6 }}>
+                      Overlay opacity
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={opacity}
+                        onChange={(e) => setOpacity(Number(e.target.value))}
+                        style={{ width: "100%" }}
+                      />
+                    </label>
+                  </div>
+                )}
+                {exposureLayer && vals.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ height: 12, borderRadius: 3, background: TURBO_CSS }} />
+                    <div
+                      className="hint"
+                      style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}
+                    >
+                      <span>{money(vMin, model.assets[0]?.currency ?? "USD")}</span>
+                      <span>asset value</span>
+                      <span>{money(vMax, model.assets[0]?.currency ?? "USD")}</span>
                     </div>
                   </div>
                 )}
